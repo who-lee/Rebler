@@ -1,4 +1,4 @@
-# Rox2 system properties v1.2
+# Rebler system properties v1.3
 #
 # Honest revision of v1.1. After the SM-A127F test on Native Detector I
 # had several of these filled with placeholder values that "performance
@@ -38,7 +38,7 @@ ro.boot.veritymode=enforcing
 # hash_alg and avb_version are the same across every Android phone since
 # Android 9. We set those. We deliberately do NOT set size or digest —
 # those are device-specific. Stock firmware sets the digest from vbmeta
-# itself; if we fake a digest, every Rox2 user shares the same value,
+# itself; if we fake a digest, every Rebler user shares the same value,
 # which is itself a fingerprint.
 ro.boot.vbmeta.device_state=locked
 ro.boot.vbmeta.avb_version=1.2

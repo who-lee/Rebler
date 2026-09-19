@@ -1,15 +1,15 @@
 #!/system/bin/sh
-# Rox-Boot - post-fs-data
+# Rebler-Boot - post-fs-data
 # Runs after filesystem mount, before Zygote.
 MODPATH="${0%/*}"
 . "$MODPATH/common_func.sh"
 
-log_msg "=== Rox-Boot post-fs-data v1.0 ==="
+log_msg "=== Rebler-Boot post-fs-data v1.0 ==="
 
 [ "$(resetprop ro.boot.safe_mode 2>/dev/null)" = "1" ] && { log_msg "WARN" "safe mode"; exit 0; }
 [ -f "$MODPATH/disable" ]                       && { log_msg "WARN" "module disabled"; exit 0; }
 
-# 1. Boot-state properties (consistent with Rox2 but standalone usable).
+# 1. Boot-state properties (consistent with Rebler but standalone usable).
 for key in \
     ro.boot.flash.locked ro.boot.verifiedbootstate ro.boot.veritymode \
     ro.boot.vbmeta.device_state ro.boot.vbmeta.avb_version \

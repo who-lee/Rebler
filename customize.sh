@@ -1,13 +1,13 @@
 #!/system/bin/sh
-# Rox2 - Magisk module installer
+# Rebler - Magisk module installer
 # Runs inside the recovery / module-installer context.
 
 ui_print "============================================"
-ui_print "  Rox2 - Root Hider v1.2"
+ui_print "  Rebler - Root Hider v1.3"
 ui_print "  by lee-muriithi-kingori"
 ui_print "============================================"
 ui_print ""
-ui_print "I built Rox2 because I got tired of useless modules that either"
+ui_print "I built Rebler because I got tired of useless modules that either"
 ui_print "claim things they can't do, or break under the most basic checks."
 ui_print ""
 ui_print "What this module does:"
@@ -18,7 +18,7 @@ ui_print "  - Default-deny with WebUI allowlist (only listed apps see root)"
 ui_print ""
 ui_print "What it does NOT do:"
 ui_print "  - It does not fake attestation certificates. If you need"
-ui_print "    Play Integrity STRONG, point Rox2 at a TrickyStore keybox"
+ui_print "    Play Integrity STRONG, point Rebler at a TrickyStore keybox"
 ui_print "    from your own device. Don't ship fake certs in modules."
 ui_print ""
 
@@ -68,12 +68,12 @@ JSON
 fi
 
 # Touch log file so the WebUI can read it without perms failures.
-touch /data/local/tmp/Rox2.log 2>/dev/null
-chmod 644 /data/local/tmp/Rox2.log 2>/dev/null
+touch /data/local/tmp/Rebler.log 2>/dev/null
+chmod 644 /data/local/tmp/Rebler.log 2>/dev/null
 
 ui_print ""
 ui_print "============================================"
-ui_print "  Rox2 installed."
+ui_print "  Rebler installed."
 ui_print "  REBOOT required for hide to apply."
 ui_print "  After reboot, open the WebUI to manage allowlist."
 ui_print "  Support: https://t.me/lestramk"

@@ -1,26 +1,26 @@
 #!/system/bin/sh
-# Rox2 - action (KSU/Magisk/APatch action button / play button)
+# Rebler - action (KSU/Magisk/APatch action button / play button)
 # When you tap the play icon on a module card in KernelSU Manager, this
-# script runs. v1.2 makes sure the WebUI opens on every root manager
+# script runs. v1.3 makes sure the WebUI opens on every root manager
 # by trying multiple launch paths in order.
 MODPATH="${0%/*}"
 . "$MODPATH/common_func.sh"
 
-VERSION="v1.2"
+VERSION="v1.3"
 WEBUI_PATH=""
 
 # Look for the WebUI index.html in the usual places.
 for p in \
-    "/data/adb/modules_update/Rox2/webroot/index.html" \
+    "/data/adb/modules_update/Rebler/webroot/index.html" \
     "$MODPATH/webroot/index.html" \
-    "/data/adb/modules/Rox2/webroot/index.html"; do
+    "/data/adb/modules/Rebler/webroot/index.html"; do
     [ -f "$p" ] && WEBUI_PATH="$p" && break
 done
 
 print_status() {
     echo ""
     echo "================================"
-    echo "  Rox2 $VERSION"
+    echo "  Rebler $VERSION"
     echo "  Root: $(detect_root_manager)"
     pfs=$(read_state post_fs_data_done 0)
     echo "  Boot: $pfs (1 = post-fs-data OK)"

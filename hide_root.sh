@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# Rox2 - hide_root.sh
+# Rebler - hide_root.sh
 # Manual trigger. I run this from adb shell or from the WebUI when I want
 # to refresh the spoofing without rebooting.
 MODPATH="${0%/*}"
@@ -29,6 +29,6 @@ log_info "Allowlist file currently includes:"
 head -c 400 "$ALLOWLIST_FILE" 2>/dev/null
 
 echo ""
-echo "Rox2: hide_root.sh complete. Logs at /data/local/tmp/Rox2.log"
+echo "Rebler: hide_root.sh complete. Logs at /data/local/tmp/Rebler.log"
 log_info "=== hide_root.sh complete ==="
 exit 0

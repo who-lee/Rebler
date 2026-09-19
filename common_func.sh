@@ -1,11 +1,11 @@
 #!/system/bin/sh
-# Rox2 - shared functions
+# Rebler - shared functions
 # I keep these POSIX-compatible so they run on bash, ash, mksh — whatever Android gives me.
 
 MODPATH="${0%/*}"
-[ -z "$MODPATH" ] && MODPATH=/data/adb/modules/Rox2
+[ -z "$MODPATH" ] && MODPATH=/data/adb/modules/Rebler
 
-LOG_FILE=/data/local/tmp/Rox2.log
+LOG_FILE=/data/local/tmp/Rebler.log
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -14,8 +14,8 @@ log_msg() {
     level="$1"; shift
     stamp=$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo 1970-01-01)
     safe=$(printf '%s' "$*" | tr -cd '[:print:]\n ')
-    echo "[$stamp] [$level] Rox2: $safe" >> "$LOG_FILE" 2>/dev/null
-    log -t Rox2 "[$level] $*" 2>/dev/null || true
+    echo "[$stamp] [$level] Rebler: $safe" >> "$LOG_FILE" 2>/dev/null
+    log -t Rebler "[$level] $*" 2>/dev/null || true
 }
 log_info()  { log_msg INFO  "$@"; }
 log_warn()  { log_msg WARN  "$@"; }
@@ -252,7 +252,7 @@ allowlist_remove() {
 }
 
 # ---------------------------------------------------------------------------
-# Boot-time property cleanup. v1.2 only sets values we can stand behind:
+# Boot-time property cleanup. v1.3 only sets values we can stand behind:
 # universal Google constants and stock states, no guessed placeholders.
 # ---------------------------------------------------------------------------
 spoof_boot_state() {

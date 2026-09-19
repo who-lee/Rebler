@@ -1,4 +1,4 @@
-# Build and release Rox2.
+# Build and release Rebler.
 #
 # Every tag turns into a release ZIP with a SHA256 checksum. Runs on the
 # same Ubuntu image used locally, so CI output matches a hand build.
@@ -47,7 +47,7 @@ jobs:
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: Rox2
+        name: Rebler
         path: |
           output/*.zip
           output/*.sha256
@@ -62,18 +62,18 @@ jobs:
           output/*.sha256
           output/update.json
         body: |
-          # Rox2 ${{ github.ref_name }}
+          # Rebler ${{ github.ref_name }}
 
           See [CHANGELOG.md](../blob/main/CHANGELOG.md) for what is in this release.
 
           ## Install
-          1. Download `Rox2-${{ github.ref_name }}.zip`
+          1. Download `Rebler-${{ github.ref_name }}.zip`
           2. Install via Magisk, KernelSU, or APatch
           3. Reboot
           4. Open the WebUI and add any packages you actually want to see root
 
           Pre-claim: this module ships **no** fake attestation chains.
-          If a target app needs Play Integrity **STRONG**, point Rox2 at a
+          If a target app needs Play Integrity **STRONG**, point Rebler at a
           keybox from TrickyStore on **your own device**. The README says so.
         draft: false
         prerelease: false

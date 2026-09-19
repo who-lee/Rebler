@@ -1,9 +1,9 @@
 #!/system/bin/sh
-# Rox-Boot - service / monitor
+# Rebler-Boot - service / monitor
 MODPATH="${0%/*}"
 . "$MODPATH/common_func.sh"
 
-log_msg "=== Rox-Boot service v1.0 ==="
+log_msg "=== Rebler-Boot service v1.0 ==="
 
 # Re-apply boot-state props after boot shifts the namespace, and
 # scrub verified-boot error markers that some ROMs re-set under us.

@@ -1,4 +1,4 @@
-// Rox2 - Zygisk native module v1.2
+// Rebler - Zygisk native module v1.3
 // I built this against the official Zygisk API v5 header (vendored as
 // zygisk.hpp, unmodified). Per process:
 //   - onLoad: resolve our module dir via api->getModuleDir() and read
@@ -31,7 +31,7 @@
 
 #include "zygisk.hpp"
 
-#define MOD "Rox2"
+#define MOD "Rebler"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  MOD, __VA_ARGS__)
 #define LOGW(...) __android_log_print(ANDROID_LOG_WARN,  MOD, __VA_ARGS__)
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, MOD, __VA_ARGS__)
@@ -67,12 +67,12 @@ static const char *const MANAGER_PKGS[] = {
 // ---------------------------------------------------------------------------
 // Config read once per process in onLoad
 // ---------------------------------------------------------------------------
-struct Rox2State {
+struct ReblerState {
     std::vector<std::string> allowlist;
     bool use_zygisk{true};
     bool parse_ok{false};
 };
-static Rox2State g_state;
+static ReblerState g_state;
 
 // Read a whole file via openat on the module dir. Returns "" on any error.
 // Trims surrounding whitespace: the flag files are written as "1\n" by
@@ -190,7 +190,7 @@ static void clean_app_env() {
 // ---------------------------------------------------------------------------
 // Module binding
 // ---------------------------------------------------------------------------
-class Rox2Module : public zygisk::ModuleBase {
+class ReblerModule : public zygisk::ModuleBase {
 public:
     void onLoad(zygisk::Api *api, JNIEnv *env) override {
         this->api_ = api;
@@ -239,4 +239,4 @@ private:
     JNIEnv      *env_{nullptr};
 };
 
-REGISTER_ZYGISK_MODULE(Rox2Module)
+REGISTER_ZYGISK_MODULE(ReblerModule)

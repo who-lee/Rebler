@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# Rox2 - allowlist manager
+# Rebler - allowlist manager
 # Add/remove/list packages via simple shell interface used by the WebUI.
 # I keep this small because anything more clever just adds bugs.
 
@@ -8,7 +8,7 @@ MODPATH="${0%/*}"
 
 usage() {
     cat <<EOF
-Rox2 allowlist manager
+Rebler allowlist manager
 
 Usage:
   sh allowlist_manager.sh list                 List current allowlist

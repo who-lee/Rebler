@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Rox-Boot</title>
+<title>Rebler-Boot</title>
 <style>
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -31,11 +31,11 @@ h2 { font-size: 16px; margin-top: 24px; color: #58a6ff; }
 </head>
 <body>
 <div class="app">
-  <h1>R<em style="color:#58a6ff;font-style:normal">o</em>x-Boot</h1>
-  <p>v1.0 &middot; companion to <a href="https://github.com/lee-muriithi-kingori/Rox2" style="color:#58a6ff">Rox2</a></p>
+  <h1>R<em style="color:#58a6ff;font-style:normal">e</em>bler-Boot</h1>
+  <p>v1.0 &middot; companion to <a href="https://github.com/who-lee/Rebler" style="color:#58a6ff">Rebler</a></p>
 
   <div class="banner warn">
-    <strong>I cannot fake the hardware.</strong> Rox-Boot hides kernel-level
+    <strong>I cannot fake the hardware.</strong> Rebler-Boot hides kernel-level
     signals (cmdline, props, error markers). It does not defeat hardware-backed
     Play Integrity attestation. For <strong>STRONG</strong> integrity you must
     run <a href="https://github.com/5ec1cff/TrickyStore" style="color:#f85149">TrickyStore</a>
@@ -60,14 +60,14 @@ h2 { font-size: 16px; margin-top: 24px; color: #58a6ff; }
     <div>androidboot.verifier=<span class="v">reset to locked</span></div>
   </div>
   <p>When the kernel allows bind-mounting a single <code>/proc/cmdline</code> file,
-  Rox-Boot replaces the content. When it does not, the upstream cmdline remains
+  Rebler-Boot replaces the content. When it does not, the upstream cmdline remains
   visible — this is logged.</p>
 
   <h2>What I do not touch</h2>
   <ul>
     <li><strong>Keymaster attestation.</strong> Whatever is in your device's TEE
     is what it is. Switching this would require a keybox from your own device
-    (TrickyStore) — that path is documented in the Rox2 README.</li>
+    (TrickyStore) — that path is documented in the Rebler README.</li>
     <li><strong>vbmeta digest / size.</strong> I will not fake these. Stock
     firmware has device-specific values; a constant value across all users is
     itself a fingerprint.</li>
@@ -77,7 +77,7 @@ h2 { font-size: 16px; margin-top: 24px; color: #58a6ff; }
 
   <p style="margin-top:24px;color:#8b949e;font-size:12px">
     Community: <a href="https://t.me/lestramk" style="color:#58a6ff">@lestramk</a>
-    &middot; Repo: <a href="https://github.com/lee-muriithi-kingori/Rox2" style="color:#58a6ff">github</a>
+    &middot; Repo: <a href="https://github.com/who-lee/Rebler" style="color:#58a6ff">github</a>
   </p>
 </div>
 </body>

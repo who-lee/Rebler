@@ -1,10 +1,10 @@
-# Rox-Boot system properties
+# Rebler-Boot system properties
 # Only contains the actual universal Google values I will defend.
 # Everything else stays at whatever the (patched) boot image had —
 # we do not invent numbers we cannot verify.
 
-# Boot state (the same shape Rox2 sets, kept here for users running
-# Rox-Boot without Rox2).
+# Boot state (the same shape Rebler sets, kept here for users running
+# Rebler-Boot without Rebler).
 ro.boot.flash.locked=1
 ro.boot.verifiedbootstate=green
 ro.boot.veritymode=enforcing

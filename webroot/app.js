@@ -1,5 +1,5 @@
 /*
- * Rox2 WebUI - extracted from index.html so reviewers can read this
+ * Rebler WebUI - extracted from index.html so reviewers can read this
  * separately from the markup. All UI behavior lives here.
  *
  * No global dependencies. Uses the WebView-supplied exec API
@@ -10,9 +10,9 @@
 (function () {
   'use strict';
 
-  const MOD = 'Rox2';
+  const MOD = 'Rebler';
   const MOD_PATH = '/data/adb/modules/' + MOD;
-  const LOG_PATH = '/data/local/tmp/Rox2.log';
+  const LOG_PATH = '/data/local/tmp/Rebler.log';
   const ALLOWLIST_PATH = MOD_PATH + '/allowlist.json';
 
   const MANAGER_PKGS = new Set([
@@ -409,4 +409,13 @@
   } else {
     boot();
   }
+
+  // Test-only hook: expose the pure exec-bridge helpers so the WebUI can be
+  // verified headless (Node) without a device. No production behavior hangs
+  // off this.
+  window.__ReblerBridgeTest = {
+    normalizeExecResult: normalizeExecResult,
+    callManagerExec: callManagerExec,
+    exec: exec
+  };
 })();

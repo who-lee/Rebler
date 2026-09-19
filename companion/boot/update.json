@@ -1,7 +1,7 @@
 {
     "version": "v1.0",
     "versionCode": 100,
-    "zipUrl": "https://github.com/lee-muriithi-kingori/Rox2/releases/download/companion-boot-v1.0/RoxBoot-v1.0.zip",
-    "changelog": "https://github.com/lee-muriithi-kingori/Rox2/blob/main/companion/boot/CHANGELOG.md",
+    "zipUrl": "https://github.com/who-lee/Rebler/releases/download/companion-boot-v1.0/ReblBoot-v1.0.zip",
+    "changelog": "https://github.com/who-lee/Rebler/blob/main/companion/boot/CHANGELOG.md",
     "tag": "stable"
 }

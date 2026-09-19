@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# Rox2 - uninstall
+# Rebler - uninstall
 # Cleanly remove everything we put down before the module dir is deleted.
 #
 # Note: the root manager deletes the whole module directory as part of
@@ -8,12 +8,12 @@
 # (logs, flags, live state) that lives alongside the module.
 
 MODPATH="${0%/*}"
-LOG_FILE=/data/local/tmp/Rox2.log
+LOG_FILE=/data/local/tmp/Rebler.log
 
 log_msg() {
     level="$1"; shift
     stamp=$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo 1970-01-01)
-    echo "[$stamp] [$level] Rox2: $*" >> "$LOG_FILE" 2>/dev/null
+    echo "[$stamp] [$level] Rebler: $*" >> "$LOG_FILE" 2>/dev/null
 }
 
 log_msg "INFO" "Uninstalling"

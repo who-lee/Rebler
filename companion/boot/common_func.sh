@@ -1,17 +1,17 @@
 #!/system/bin/sh
-# Rox-Boot - companion module functions
-# Smaller surface than Rox2: only what touches bootloader-state signals.
+# ReblBoot - companion module functions
+# Smaller surface than Rebler: only what touches bootloader-state signals.
 
 MODPATH="${0%/*}"
-[ -z "$MODPATH" ] && MODPATH=/data/adb/modules/RoxBoot
+[ -z "$MODPATH" ] && MODPATH=/data/adb/modules/ReblBoot
 
-LOG_FILE=/data/local/tmp/RoxBoot.log
+LOG_FILE=/data/local/tmp/ReblBoot.log
 
 log_msg() {
     level="$1"; shift
     stamp=$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo 1970-01-01)
-    echo "[$stamp] [$level] RoxBoot: $*" >> "$LOG_FILE" 2>/dev/null
-    log -t RoxBoot "[$level] $*" 2>/dev/null
+    echo "[$stamp] [$level] ReblBoot: $*" >> "$LOG_FILE" 2>/dev/null
+    log -t ReblBoot "[$level] $*" 2>/dev/null
 }
 
 resetprop_safe() {
@@ -72,7 +72,7 @@ make_clean_cmdline() {
     cleaned=$(echo "$cleaned" | sed 's/  */ /g; s/^ //; s/ $//')
     [ -z "$cleaned" ] && return 1
 
-    tmp=/data/local/tmp/roxboot_cmdline_$$
+    tmp=/data/local/tmp/reblboot_cmdline_$$
     umask 022
     printf '%s\n' "$cleaned androidboot.verifiedbootstate=green androidboot.verifier=locked" > "$tmp"
 

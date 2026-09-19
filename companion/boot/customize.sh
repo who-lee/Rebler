@@ -1,17 +1,17 @@
 #!/system/bin/sh
-# Rox-Boot - customize
+# Rebler-Boot - customize
 MODPATH="${0%/*}"
 
-[ "$(id -u)" != "0" ] && abort "Rox-Boot: not root"
+[ "$(id -u)" != "0" ] && abort "Rebler-Boot: not root"
 
 ui_print "============================================"
-ui_print "  Rox-Boot v1.0 - Bootloader Hide Companion"
+ui_print "  Rebler-Boot v1.0 - Bootloader Hide Companion"
 ui_print "  Author: lee-muriithi-kingori"
 ui_print "============================================"
 ui_print ""
-ui_print "I built Rox-Boot as a companion to Rox2. It goes one level"
+ui_print "I built Rebler-Boot as a companion to Rebler. It goes one level"
 ui_print "deeper on bootloader-state signals at boot time:"
-ui_print "  - Sets the same verified-boot chain as Rox2"
+ui_print "  - Sets the same verified-boot chain as Rebler"
 ui_print "  - Strips verified-boot error markers"
 ui_print "  - Bind-mounts a clean /proc/cmdline so apps reading it"
 ui_print "    directly do not see androidboot.unlocked=1"
@@ -32,13 +32,13 @@ set_perm "$MODPATH/system.prop"     0 0 0644
 set_perm "$MODPATH/module.prop"     0 0 0644
 set_perm "$MODPATH/common_func.sh"  0 0 0644
 
-touch /data/local/tmp/RoxBoot.log 2>/dev/null
-chmod 644 /data/local/tmp/RoxBoot.log 2>/dev/null
+touch /data/local/tmp/ReblBoot.log 2>/dev/null
+chmod 644 /data/local/tmp/ReblBoot.log 2>/dev/null
 
 ui_print ""
-ui_print "Rox-Boot installed. Reboot for changes to apply."
-ui_print "If used alongside Rox2, install Rox-Boot second so its"
-ui_print "post-fs-data runs after Rox2's and inherits the cleaned props."
+ui_print "Rebler-Boot installed. Reboot for changes to apply."
+ui_print "If used alongside Rebler, install Rebler-Boot second so its"
+ui_print "post-fs-data runs after Rebler's and inherits the cleaned props."
 ui_print ""
 ui_print "Community: https://t.me/lestramk"
 exit 0

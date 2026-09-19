@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
-# Rox2 - build.sh
+# Rebler - build.sh
 # I built this so the WebUI ZIP could be produced locally without CI.
 #
 # Behavior:
 #   - Runs the validation pass at all times
 #   - If ANDROID_NDK_HOME is set, compiles the Zygisk native module and
-#     bundles librox2.so into zygisk/<abi>.so for each ABI
+#     bundles librebler.so into zygisk/<abi>.so for each ABI
 #   - Without NDK, the build still produces a valid module ZIP that
 #     works on every root manager; the Zygisk layer just falls through
 #     to the shell-script path. We deliberately do not invent a fake lib.
 #
 # Usage:
 #   ./build.sh                       # default version (read from module.prop)
-#   ./build.sh v1.2                  # explicit version
+#   ./build.sh v1.3                  # explicit version
 #   ./build.sh --check-only          # validate but don't package
 
 set -u
@@ -21,9 +21,9 @@ ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BUILD_DIR="$ROOT_DIR/build"
 OUTPUT_DIR="$ROOT_DIR/output"
 
-MODULE_ID="Rox2"
-MODULE_NAME="Rox2"
-DEFAULT_VERSION="$(grep '^version=' "$ROOT_DIR/module.prop" 2>/dev/null | cut -d= -f2 || echo v1.2)"
+MODULE_ID="Rebler"
+MODULE_NAME="Rebler"
+DEFAULT_VERSION="$(grep '^version=' "$ROOT_DIR/module.prop" 2>/dev/null | cut -d= -f2 || echo v1.3)"
 VERSION="${1:-$DEFAULT_VERSION}"
 VERSION_CODE="$(grep '^versionCode=' "$ROOT_DIR/module.prop" 2>/dev/null | cut -d= -f2)"
 CHECK_ONLY=false
@@ -65,7 +65,7 @@ validate() {
     done
 
     # Module.prop shape
-    grep -q '^id=Rox2$'         "$ROOT_DIR/module.prop"     || add_err "module.prop id != Rox2"
+    grep -q '^id=Rebler$'         "$ROOT_DIR/module.prop"     || add_err "module.prop id != Rebler"
     grep -q '^versionCode='     "$ROOT_DIR/module.prop"     || add_err "module.prop versionCode missing"
     grep -q '^webroot=webroot$' "$ROOT_DIR/module.prop"     || add_err "module.prop webroot missing"
 
@@ -94,7 +94,7 @@ ok "validation passed"
 build_native() {
     if [ -z "${ANDROID_NDK_HOME:-}" ]; then
         warn "ANDROID_NDK_HOME not set — skipping native Zygisk build"
-        warn "  Rox2 will still function via its shell-script hide layer."
+        warn "  Rebler will still function via its shell-script hide layer."
         return 0
     fi
     # Windows NDKs ship ndk-build.cmd (a cmd wrapper); Unix NDKs ship the
@@ -155,8 +155,8 @@ cp -r "$ROOT_DIR/webroot" "$ASSEMBLY/"
 if [ -d "$BUILD_DIR/libs" ]; then
     mkdir -p "$ASSEMBLY/zygisk"
     for abi in arm64-v8a armeabi-v7a x86 x86_64; do
-        if [ -f "$BUILD_DIR/libs/$abi/libRox2.so" ]; then
-            cp "$BUILD_DIR/libs/$abi/libRox2.so" "$ASSEMBLY/zygisk/$abi.so"
+        if [ -f "$BUILD_DIR/libs/$abi/libRebler.so" ]; then
+            cp "$BUILD_DIR/libs/$abi/libRebler.so" "$ASSEMBLY/zygisk/$abi.so"
             ok "  zygisk/$abi.so packaged"
         fi
     done
@@ -173,8 +173,8 @@ cat > "$ASSEMBLY/update.json" <<EOF
 {
     "version": "$VERSION",
     "versionCode": $VERSION_CODE,
-    "zipUrl": "https://github.com/who-lee/Rox2/releases/download/$VERSION/Rox2-$VERSION.zip",
-    "changelog": "https://github.com/who-lee/Rox2/releases/tag/$VERSION",
+    "zipUrl": "https://github.com/who-lee/Rebler/releases/download/$VERSION/Rebler-$VERSION.zip",
+    "changelog": "https://github.com/who-lee/Rebler/releases/tag/$VERSION",
     "tag": "stable"
 }
 EOF
@@ -231,8 +231,8 @@ if [ ! -f "$ZIP_OUT" ]; then err "ZIP did not get created"; exit 1; fi
 ok "built $ZIP_OUT ($(file_size "$ZIP_OUT") bytes)"
 
 # Mirror to the standard "ready to release" filename
-if [ "$OUTPUT_DIR/$ZIP_NAME" != "$OUTPUT_DIR/Rox2-$VERSION.zip" ]; then
-    cp "$ZIP_OUT" "$OUTPUT_DIR/Rox2-$VERSION.zip"
+if [ "$OUTPUT_DIR/$ZIP_NAME" != "$OUTPUT_DIR/Rebler-$VERSION.zip" ]; then
+    cp "$ZIP_OUT" "$OUTPUT_DIR/Rebler-$VERSION.zip"
 fi
 
 # Checksum

@@ -1,11 +1,11 @@
 #!/system/bin/sh
-# Rox-Boot - action
+# Rebler-Boot - action
 MODPATH="${0%/*}"
 . "$MODPATH/common_func.sh"
 
 echo "================================"
-echo "  Rox-Boot v1.0"
-echo "  Standalone companion to Rox2"
+echo "  Rebler-Boot v1.0"
+echo "  Standalone companion to Rebler"
 echo "================================"
 echo ""
 echo "Cmdline scrubbed: yes (or skipped if kernel refused)"

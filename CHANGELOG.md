@@ -1,6 +1,15 @@
-# Rox2 changelog
+# Rebler changelog
 
-All notable changes to Rox2 are documented here. I write the dates as I cut the release.
+All notable changes to Rebler are documented here. I write the dates as I cut the release.
+
+## v1.3 (2026-09-19)
+
+### Changed
+
+- **Renamed to Rebler.** The module is now `id=Rebler` under `who-lee/Rebler`. The old `Rox2` identity is gone from code, paths, logs, WebUI, and release tooling. This is a rename release: behavior is unchanged from v1.2, only names and URLs moved.
+- **Module paths.** `/data/adb/modules/Rox2` → `/data/adb/modules/Rebler`; logs `/data/local/tmp/Rox2.log` → `/data/local/tmp/Rebler.log` (install-time state migrates with the module).
+- **WebUI is Rebler-branded.** New title, logo, footer, and repo links. The read-only bridge hook is now `window.__ReblerBridgeTest`.
+- **Companion renamed to Rebler-Boot.** Module `id=ReblBoot`, name "Rebler-Boot - Bootloader Hide Companion", log `/data/local/tmp/ReblBoot.log`. Still standalone or alongside Rebler. Still refuses to fake a vbmeta digest or bundle keyboxes.
 
 ## v1.2 (2026-07-04)
 

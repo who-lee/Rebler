@@ -1,19 +1,19 @@
-# Rox2 - Root Hider for Magisk / KernelSU / APatch.
+# Rebler - Root Hider for Magisk / KernelSU / APatch.
 
-I built Rox2 because I got tired of modules that make promises they don't keep. The v1.4 of my old module got destroyed by reviewers calling out fake passmarks and zero-byte certs labelled "Google Hardware Attestation Root CA". I learned from that. Rox2 does exactly the things I can prove it does, and stops there.
+I built Rebler because I got tired of modules that make promises they don't keep. The v1.4 of my old module got destroyed by reviewers calling out fake passmarks and zero-byte certs labelled "Google Hardware Attestation Root CA". I learned from that. Rebler does exactly the things I can prove it does, and stops there.
 
-## What I built (v1.2)
+## What I built (v1.3)
 
-Rox2 hides root from apps that should not see it. It runs as a Magisk, KernelSU, or APatch module on Android 6.0+ (API 24+). The hiding happens in two layers, with a shell-side toggles layer on top:
+Rebler hides root from apps that should not see it. It runs as a Magisk, KernelSU, or APatch module on Android 6.0+ (API 24+). The hiding happens in two layers, with a shell-side toggles layer on top:
 
 ### Layer 1: boot-time property spoofing (`post-fs-data.sh`)
-I set the verified-boot chain (`ro.boot.flash.locked`, `ro.boot.verifiedbootstate`, `ro.boot.vbmeta.device_state`, `ro.secureboot.lockstate`, `sys.oem_unlock_allowed`, plus the universal Google constants `ro.boot.vbmeta.avb_version` and `ro.boot.vbmeta.hash_alg`) — the props every bank/streaming app checks before it even runs attestation. I deliberately do **not** set `ro.boot.vbmeta.size` or `ro.boot.vbmeta.digest`: a fake digest shared by every Rox2 user is itself a fingerprint. v1.1 shipped guessed placeholders for those and reviewers rightly flagged them; v1.2 deletes them.
+I set the verified-boot chain (`ro.boot.flash.locked`, `ro.boot.verifiedbootstate`, `ro.boot.vbmeta.device_state`, `ro.secureboot.lockstate`, `sys.oem_unlock_allowed`, plus the universal Google constants `ro.boot.vbmeta.avb_version` and `ro.boot.vbmeta.hash_alg`) — the props every bank/streaming app checks before it even runs attestation. I deliberately do **not** set `ro.boot.vbmeta.size` or `ro.boot.vbmeta.digest`: a fake digest shared by every Rebler user is itself a fingerprint. v1.1 shipped guessed placeholders for those and reviewers rightly flagged them; v1.2 deletes them.
 
 ### Layer 2: Zygisk native layer (`zygisk_src/jni/module.cpp`)
 On `preAppSpecialize`, for non-allowlisted apps I `unshare(CLONE_NEWNS)`, detach `/data/adb/modules`, `/data/adb/ksu`, `/data/adb/ap`, `/data/adb/magisk`, `/data/adb/lspd`, `/data/adb/riru`, `/sbin/.magisk`, `/sbin/magisk`, and `/debug_ramdisk`. v1.2 adds the LSPosed storage paths because `org.lsposed.manager` is what Native Detector flagged as a Risky App on my test phone. Then I strip `MAGISK_VER`, `MAGISKTMP`, `KSU`, `APATCH`, `XPOSED`, `LSPOSED` envs.
 
-### Layer 3: WebUI toggles (v1.2)
-Three feature flags are persisted at `/data/adb/modules/Rox2/.flag_*`:
+### Layer 3: WebUI toggles (v1.3)
+Three feature flags are persisted at `/data/adb/modules/Rebler/.flag_*`:
 
 - `.flag_spoof` — boot/property spoofing on/off
 - `.flag_keystore` — keystore leak scrub
@@ -28,25 +28,25 @@ The WebUI defaults to deny-everything. Every app that wants to see root must be 
 
 ## What I deliberately did not build
 
-- **No fake Google attestation certificates.** I do not ship bytes labelled "Google Hardware Attestation Root CA" because they are not. If you want **Play Integrity STRONG**, route Rox2 at a keybox from [TrickyStore](https://github.com/5ec1cff/TrickyStore) extracted from **your own device**.
+- **No fake Google attestation certificates.** I do not ship bytes labelled "Google Hardware Attestation Root CA" because they are not. If you want **Play Integrity STRONG**, route Rebler at a keybox from [TrickyStore](https://github.com/5ec1cff/TrickyStore) extracted from **your own device**.
 
   What I *do* reliably pass: Play Integrity **BASIC** (verified) and attempts to pass **DEVICE** (verified boot + props clean). Most banking apps (Chase, BofA, M-Pesa, Equity, Netflix, Disney+, Spotify) accept DEVICE. STRONG is a separate conversation and requires real key attestation from real hardware.
 
 - **No "passmark: 99.9%" number.** I cannot measure that. I will not invent it. The build script fails the release if the string ever sneaks back into `module.prop`.
 
-- **No fake Zygisk hooks.** My old code had a section where I assigned `orig_openat = dlsym(...)` and then commented "For now, log that we've reached this point". I deleted that. Rox2's Zygisk layer only does things it actually does.
+- **No fake Zygisk hooks.** My old code had a section where I assigned `orig_openat = dlsym(...)` and then commented "For now, log that we've reached this point". I deleted that. Rebler's Zygisk layer only does things it actually does.
 
 - **No JNI binder hooks yet.** I tried to hook `ApplicationPackageManager.getInstalledPackages` to filter the package list — the right way to hide `me.weishu.kernelsu` from PM — but it requires the proprietary `hookJNIMethod` symbol from Magisk's headers and a clean `JNINativeMethod` struct, and I cannot compile-test it on the device from my workspace. The manager toggle (`deny_root_manager`) is namespace-based, not PM-list filtering; PM filtering is deferred. I will not ship unverified code.
 
 ## Install
 
-Download `Rox2-v1.2.zip` from the [Releases](../../releases). Open Magisk Manager / KernelSU / APatch and install the module from the local ZIP. Reboot. Open the WebUI (Magisk: tap the play button; KernelSU/APatch: tap the module card). The first time the WebUI opens, the allowlist is empty — apps get root hidden by default. Add packages to the allowlist only if you trust them.
+Download `Rebler-v1.3.zip` from the [Releases](../../releases). Open Magisk Manager / KernelSU / APatch and install the module from the local ZIP. Reboot. Open the WebUI (Magisk: tap the play button; KernelSU/APatch: tap the module card). The first time the WebUI opens, the allowlist is empty — apps get root hidden by default. Add packages to the allowlist only if you trust them.
 
 ```bash
 # adb shell
-adb shell sh /data/adb/modules/Rox2/hide_root.sh
-adb shell sh /data/adb/modules/Rox2/allowlist_manager.sh list
-adb shell sh /data/adb/modules/Rox2/allowlist_manager.sh add com.example.app
+adb shell sh /data/adb/modules/Rebler/hide_root.sh
+adb shell sh /data/adb/modules/Rebler/allowlist_manager.sh list
+adb shell sh /data/adb/modules/Rebler/allowlist_manager.sh add com.example.app
 ```
 
 ## Test it
