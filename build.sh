@@ -12,7 +12,7 @@
 #
 # Usage:
 #   ./build.sh                       # default version (read from module.prop)
-#   ./build.sh v1.0                  # explicit version
+#   ./build.sh v1.2                  # explicit version
 #   ./build.sh --check-only          # validate but don't package
 
 set -u
@@ -23,7 +23,7 @@ OUTPUT_DIR="$ROOT_DIR/output"
 
 MODULE_ID="Rox2"
 MODULE_NAME="Rox2"
-DEFAULT_VERSION="$(grep '^version=' "$ROOT_DIR/module.prop" 2>/dev/null | cut -d= -f2 || echo v1.1)"
+DEFAULT_VERSION="$(grep '^version=' "$ROOT_DIR/module.prop" 2>/dev/null | cut -d= -f2 || echo v1.2)"
 VERSION="${1:-$DEFAULT_VERSION}"
 VERSION_CODE="$(grep '^versionCode=' "$ROOT_DIR/module.prop" 2>/dev/null | cut -d= -f2)"
 CHECK_ONLY=false
@@ -97,9 +97,14 @@ build_native() {
         warn "  Rox2 will still function via its shell-script hide layer."
         return 0
     fi
+    # Windows NDKs ship ndk-build.cmd (a cmd wrapper); Unix NDKs ship the
+    # ndk-build shell script. Use -f, not -x: on git-bash a .cmd file is
+    # runnable (bash hands it to cmd.exe) but is never marked executable.
     ndk_build=""
-    if [ -x "$ANDROID_NDK_HOME/ndk-build" ]; then ndk_build="$ANDROID_NDK_HOME/ndk-build"
-    elif [ -x "$ANDROID_NDK_HOME/ndk-build.cmd" ]; then ndk_build="$ANDROID_NDK_HOME/ndk-build.cmd"
+    if [ -f "$ANDROID_NDK_HOME/ndk-build.cmd" ]; then
+        ndk_build="$ANDROID_NDK_HOME/ndk-build.cmd"
+    elif [ -f "$ANDROID_NDK_HOME/ndk-build" ]; then
+        ndk_build="$ANDROID_NDK_HOME/ndk-build"
     fi
     if [ -z "$ndk_build" ]; then
         warn "ndk-build not found at $ANDROID_NDK_HOME — skipping native build"
@@ -168,8 +173,8 @@ cat > "$ASSEMBLY/update.json" <<EOF
 {
     "version": "$VERSION",
     "versionCode": $VERSION_CODE,
-    "zipUrl": "https://github.com/lee-muriithi-kingori/Rox2/releases/download/$VERSION/Rox2-$VERSION.zip",
-    "changelog": "https://github.com/lee-muriithi-kingori/Rox2/releases/tag/$VERSION",
+    "zipUrl": "https://github.com/who-lee/Rox2/releases/download/$VERSION/Rox2-$VERSION.zip",
+    "changelog": "https://github.com/who-lee/Rox2/releases/tag/$VERSION",
     "tag": "stable"
 }
 EOF
@@ -186,7 +191,27 @@ ZIP_OUT="$OUTPUT_DIR/$ZIP_NAME"
 
 if have_zip; then
     (cd "$ASSEMBLY" && zip -qr "$ZIP_OUT" .)
-elif command -v node >/dev/null 2>&1; then
+elif command -v python3 >/dev/null 2>&1 && python3 -c "exit(0)" 2>/dev/null; then
+    log "ZIP via python3 (zipfile)"
+    # On git-bash/MSYS, native Python cannot open /c/...-style paths, so
+    # convert with cygpath if it exists (Linux here just keeps the path).
+    if command -v cygpath >/dev/null 2>&1; then
+        PY_SRC="$(cygpath -w "$ASSEMBLY")" PY_OUT="$(cygpath -w "$ZIP_OUT")"
+    else
+        PY_SRC="$ASSEMBLY" PY_OUT="$ZIP_OUT"
+    fi
+    export PY_SRC PY_OUT
+    python3 - <<PY
+import os, zipfile
+src = os.environ['PY_SRC']; out = os.environ['PY_OUT']
+with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as z:
+    for r, _, files in os.walk(src):
+        for f in files:
+            p = os.path.join(r, f)
+            arc = os.path.relpath(p, src).replace(os.sep, '/')
+            z.write(p, arc)
+PY
+elif command -v node >/dev/null 2>&1 && command -v powershell.exe >/dev/null 2>&1; then
     log "ZIP via node -> PowerShell Compress-Archive"
     node -e "
 const {spawnSync}=require('child_process');const path=require('path');
@@ -196,21 +221,9 @@ const r=spawnSync('powershell.exe',['-NoProfile','-Command',
 ],{encoding:'utf8'});
 if(r.status){process.stderr.write(r.stderr||r.stdout);process.exit(1);}
 "
-elif command -v python3 >/dev/null 2>&1 && python3 -c "exit(0)" 2>/dev/null; then
-    log "ZIP via python3"
-    python3 - <<PY
-import os, sys, zipfile
-src = r"$ASSEMBLY"; out = r"$ZIP_OUT"
-with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as z:
-    for r, _, files in os.walk(src):
-        for f in files:
-            p = os.path.join(r, f)
-            arc = os.path.relpath(p, src).replace(os.sep, '/')
-            z.write(p, arc)
-PY
 else
-    err "no zip, node, or working python3 — cannot package ZIP"
-    err "run the assemble_and_package.ps1 from PowerShell instead"
+    err "no zip, python3, or node+PowerShell — cannot package ZIP"
+    err "install python3 or the 'zip' utility and re-run build.sh"
     exit 1
 fi
 
@@ -218,19 +231,33 @@ if [ ! -f "$ZIP_OUT" ]; then err "ZIP did not get created"; exit 1; fi
 ok "built $ZIP_OUT ($(file_size "$ZIP_OUT") bytes)"
 
 # Mirror to the standard "ready to release" filename
-cp "$ZIP_OUT" "$OUTPUT_DIR/Rox2-$VERSION.zip"
+if [ "$OUTPUT_DIR/$ZIP_NAME" != "$OUTPUT_DIR/Rox2-$VERSION.zip" ]; then
+    cp "$ZIP_OUT" "$OUTPUT_DIR/Rox2-$VERSION.zip"
+fi
 
 # Checksum
 if command -v sha256sum >/dev/null; then
     (cd "$OUTPUT_DIR" && sha256sum "$ZIP_NAME" > "$ZIP_NAME.sha256")
 elif command -v node >/dev/null 2>&1; then
+    if command -v cygpath >/dev/null 2>&1; then
+        NSRC="$(cygpath -w "$OUTPUT_DIR/$ZIP_NAME")"
+    else
+        NSRC="$OUTPUT_DIR/$ZIP_NAME"
+    fi
     node -e "
 const fs=require('fs'),crypto=require('crypto'),h=crypto.createHash('sha256');
-const data=fs.readFileSync('$OUTPUT_DIR/$ZIP_NAME');
+const data=fs.readFileSync('$NSRC');
 h.update(data);
 fs.writeFileSync('$OUTPUT_DIR/$ZIP_NAME.sha256', h.digest('hex')+'  ${ZIP_NAME}\n');
 "
 fi
 
 ok "Done. Output: $OUTPUT_DIR/"
+
+# The GitHub workflow uploads output/update.json for each release, so it
+# must exist next to the ZIP. Copy the repo-level one (it lives alongside
+# module.prop and carries the same tag) into the output dir.
+cp "$ROOT_DIR/update.json" "$OUTPUT_DIR/update.json"
+ok "update.json staged to output/"
+
 ls -la "$OUTPUT_DIR" 2>/dev/null || true

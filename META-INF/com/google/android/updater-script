@@ -1,4 +1,7 @@
 #!/sbin/sh
 # Rox2 - updater-script
-# Generic Magisk module - Magisk handles installation for us.
-ui_print "Rox2 v1.0 module loader"
+# Unused by Magisk/KSU/APatch (they call update-binary with their own
+# arguments). Kept so TWRP-style recoveries can find the installer.
+assert(package_extract_file("META-INF/com/google/android/update-binary", "/tmp/update-binary"));
+set_progress(1);
+ui_print("Rox2 installation starting...");

@@ -1,6 +1,48 @@
 #!/sbin/sh
-# Rox2 - update-binary
-# Magisk module-installer entrypoint. Just hands off to the customize
-# script and prints status.
+# Rox2 - update-binary (TWRP / recovery installer)
+# Magisk, KernelSU and APatch install this module through their own
+# installer paths and never touch this file. This exists so that flashing
+# the ZIP in a plain recovery (TWRP-style) also works: we extract the
+# module to /data/adb/modules/Rox2 and run the real customize.sh with the
+# shell helpers a recovery provides.
+#
+# Invocation (TWRP API): update-binary <outfd> <zip> <system-mountpoint>
+
+OUTFD="${2:-}"
+
+ui_print() { echo "ui_print $*" >&"$OUTFD"; echo "ui_print" >&"$OUTFD"; }
+abort() { ui_print "ERROR: $*"; exit 1; }
+
+if [ "$(id -u)" != "0" ]; then abort "Must run as root"; fi
+OUTFD=$(echo "$OUTFD" | sed 's/[^0-9]//g')
+[ -z "$OUTFD" ] && OUTFD=1
+
+ZIPFILE="$2"
+MODPATH=/data/adb/modules/Rox2
+
+ui_print "Extracting Rox2 to $MODPATH"
+mkdir -p "$MODPATH" /tmp/rox2-$$ 2>/dev/null
+# Unzip the module tree, skipping our own META-INF and this script.
+# TWRP-style recoveries usually have a busybox with the unzip applet.
+if ! unzip -o "$ZIPFILE" -x 'META-INF/*' -d /tmp/rox2-$$ 2>/dev/null \
+     && ! busybox unzip -o "$ZIPFILE" -x 'META-INF/*' -d /tmp/rox2-$$ 2>/dev/null; then
+    abort "no unzip available in this recovery"
+fi
+cp -a /tmp/rox2-$$/. "$MODPATH/" || abort "copy failed"
+rm -rf /tmp/rox2-$$
+
+# The subset of Magisk installer helpers that customize.sh relies on:
+#   set_perm PATH USER GROUP MODE
+#   set_perm_recursive PATH USER GROUP DIR_MODE FILE_MODE
+set_perm() { chmod "$4" "$1" 2>/dev/null; }
+set_perm_recursive() {
+    chmod "$5" "$1" 2>/dev/null
+    find "$1" -type d -exec chmod "$4" {} + 2>/dev/null
+    find "$1" -type f -exec chmod "$5" {} + 2>/dev/null
+}
+
+chmod 755 "$MODPATH" 2>/dev/null
 . "$MODPATH/customize.sh"
+
+ui_print "Done. Reboot to apply."
 exit 0

@@ -5,7 +5,7 @@
 MODPATH="${0%/*}"
 . "$MODPATH/common_func.sh"
 
-log_info "=== post-fs-data v1.1 start ==="
+log_info "=== post-fs-data v1.2 start ==="
 
 if [ "$(resetprop ro.boot.safe_mode 2>/dev/null)" = "1" ]; then
     log_warn "Safe mode — minimal run only"
@@ -18,7 +18,7 @@ if [ "$(resetprop ro.boot.mode 2>/dev/null)" = "recovery" ]; then
     exit 0
 fi
 
-[ -f "$MODPATH/disable" ] && { log_warn "Module disabled via flag"; exit 0; }
+[ -f "$MODPATH/disable" ] && { log_warn "Module disabled via flag"; write_state post_fs_data_done 1; exit 0; }
 
 # Feature flags are first so the WebUI can flip them mid-flight and have
 # the next post-fs-data see them.
@@ -32,5 +32,5 @@ if is_flag_enabled zygisk;   then scrub_root_paths;    else log_info "zygisk mou
 boot_summary
 write_state post_fs_data_done 1
 
-log_info "=== post-fs-data v1.1 complete ==="
+log_info "=== post-fs-data v1.2 complete ==="
 exit 0

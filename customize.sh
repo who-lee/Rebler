@@ -3,7 +3,7 @@
 # Runs inside the recovery / module-installer context.
 
 ui_print "============================================"
-ui_print "  Rox2 - Root Hider v1.0"
+ui_print "  Rox2 - Root Hider v1.2"
 ui_print "  by lee-muriithi-kingori"
 ui_print "============================================"
 ui_print ""
@@ -55,13 +55,14 @@ set_perm "$MODPATH/allowlist.json"        0 0 0644
 [ -d "$MODPATH/webroot" ] && set_perm_recursive "$MODPATH/webroot" 0 0 0755 0644
 [ -d "$MODPATH/zygisk" ]  && set_perm_recursive "$MODPATH/zygisk"  0 0 0755 0644
 
-# Init allowlist with sane defaults. Touch the manager packages so
-# Rox2 itself can be managed even though we deny the world by default.
+# Init allowlist with sane defaults. Default is "deny everyone except root
+# managers" — managers stay auto-allowed until the user flips the WebUI
+# toggle, at which point they are hidden like any other app.
 ui_print "  Initializing allowlist ..."
 mkdir -p "$MODPATH" 2>/dev/null
 if [ ! -f "$MODPATH/allowlist.json" ]; then
     cat > "$MODPATH/allowlist.json" <<'JSON'
-{"allow":["com.topjohnwu.magisk","me.weishu.kernelsu","me.bmax.apatch"],"deny_root_manager":false,"version":1}
+{"allow":[],"deny_root_manager":false,"version":1}
 JSON
     chmod 644 "$MODPATH/allowlist.json"
 fi

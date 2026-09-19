@@ -2,6 +2,28 @@
 
 All notable changes to Rox2 are documented here. I write the dates as I cut the release.
 
+## v1.2 (2026-07-04)
+
+Release after reviewer pushback on the v1.1 placeholder values. This release is also where the WebUI finally got a code split and real property name handling.
+
+### Changed
+
+- **Dropped placeholder values from `system.prop`.** v1.1 shipped `ro.boot.vbmeta.size`, `ro.boot.vbmeta.digest`, `ro.boot.hardware.platform`, `ro.boot.hardware.revision`, `ro.boot.bootloader`, `ro.boot.serialno`, `ro.boot.baseband`, and `ro.boot.revision` with guessed constants. v1.2 removes all of them. A shared fake digest across every Rox2 user is itself a fingerprint, so the fix is deletion, not a new constant. Only universal Google constants (`ro.boot.vbmeta.avb_version`, `ro.boot.vbmeta.hash_alg`) and stock states stay.
+- **WebUI split into `index.html` + `styles.css` + `app.js`** so reviewers can diff markup, styling, and behavior separately.
+- **Keystore/root-leak clearing uses `resetprop --delete`**, which removes the property. (An earlier note claimed `-c`; in Magisk 27's Rust resetprop that flag means *compact*, not clear, so the fix is `--delete`.)
+- **Zygisk layer rebuilt on the official API v5 header.** `zygisk_src/jni/zygisk.hpp` is now the unmodified upstream header, and `module.cpp` uses `api->getModuleDir()` to read config once per forked process instead of the previous homegrown ABI that Magisk ≥ 27 cannot load. Config reads are defensive: a broken `allowlist.json` degrades to managers-allowed rather than hiding everything.
+- **Removed the per-app shell monitor.** The old `service.sh` polled `pm list packages` and exported env vars in a subshell, which can never affect an already-running app. Env stripping belongs in the Zygisk layer (`clean_app_env`), and that is where it happens. `post-fs-data.sh` now writes a done-state on its disabled early-exit too, so the WebUI status badge is honest.
+- **Manager-hide is one source of truth.** It lives in `allowlist.json` as `deny_root_manager` (default `false`). The old separate `.flag_hide_mgr`/`.flag_hide_xposed` files are gone; the WebUI toggle reads the JSON and nothing else.
+
+### New
+
+- **Rox-Boot companion module (`companion/boot`).** Goes one level deeper at the kernel-cmdline level: bind-mounts a clean `/proc/cmdline` (strips `androidboot.unlocked=1`, `androidboot.verifier=disabled`) and strips verified-boot error markers. Standalone or alongside Rox2. Still refuses to fake a vbmeta digest or bundle keyboxes.
+
+### Honest gaps (unchanged, still deferred)
+
+- JNI hook on `ApplicationPackageManager.getInstalledPackages`.
+- `Looper.loop()` hook to strip Xposed/LSPosed callbacks.
+
 ## v1.1 (2026-07-04)
 
 I rebuilt this two hours after the v1.0 push because I tested against Native Detector on a Samsung SM-A127F running KernelSU. The v1.0 leaked on three specific checks. This release fixes two of them honestly and writes the third one down as out-of-scope.

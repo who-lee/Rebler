@@ -1,7 +1,7 @@
 # Rox2 system properties v1.2
 #
 # Honest revision of v1.1. After the SM-A127F test on Native Detector I
-# had three of these filled with placeholder values that "performance
+# had several of these filled with placeholder values that "performance
 # devs" rightly called out as fake. This revision is what I actually
 # believe a hidden root should look like.
 #
@@ -16,6 +16,7 @@
 #   - ro.boot.revision=0               (no safe default)
 #
 # What stays:
+#   - ro.build.tags=release-keys, ro.build.type=user (Build section below)
 #   - ro.boot.flash.locked=1           (stock Samsung with locked BL)
 #   - ro.boot.verifiedbootstate=green  (stock state)
 #   - ro.boot.veritymode=enforcing     (stock state)
@@ -26,8 +27,7 @@
 #   - sys.oem_unlock_allowed=0         (stock state for a locked phone)
 #
 # What I deliberately do NOT set:
-#   - ro.build.tags, ro.build.type     (set from system.prop defaults)
-#   - ro.boot.hardware*                  (firmware-specific, not me to invent)
+#   - ro.boot.hardware*                (firmware-specific, not me to invent)
 
 # Verified boot — locked, enforcing chain
 ro.boot.flash.locked=1

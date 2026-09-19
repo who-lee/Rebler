@@ -26,7 +26,7 @@ log_error() { log_msg ERROR "$@"; }
 # ---------------------------------------------------------------------------
 detect_root_manager() {
     if [ -n "${KSU:-}" ] && [ "$KSU" = "true" ]; then echo "kernelsu"
-    elif [ -n "${APATCH:-}" ] && [ "$APATCH}" = "true" ]; then echo "apatch"
+    elif [ -n "${APATCH:-}" ] && [ "$APATCH" = "true" ]; then echo "apatch"
     elif [ -n "${MAGISK_VER_CODE:-}" ]; then echo "magisk"
     else echo "unknown"
     fi
@@ -86,12 +86,10 @@ delprop_if_exists() {
     [ -z "$target" ] && return 0
     current=$(resetprop "$target" 2>/dev/null || true)
     [ -z "$current" ] && return 0
-    # resetprop -c (prop_clear) is the canonical Magisk way to make a
-    # property invisible to readers. --delete only succeeds on writable
-    # properties and silently fails on ones Magisk controls, so prefer -c
-    # for root-solution leaks.
-    resetprop -c "$target" 2>/dev/null || \
-        resetprop --delete "$target" 2>/dev/null || true
+    # resetprop --delete makes the property invisible to readers. The old
+    # -c flag now means "compact" in Magisk 27's Rust resetprop, so --delete
+    # is the one that actually clears the property.
+    resetprop --delete "$target" 2>/dev/null || true
 }
 
 # ---------------------------------------------------------------------------
@@ -99,8 +97,9 @@ delprop_if_exists() {
 #   .flag_spoof       - boot/property spoofing on/off   (default 1)
 #   .flag_keystore    - keystore leak scrub            (default 1)
 #   .flag_zygisk      - Zygisk mount-namespace hide    (default 1)
-#   .flag_hide_mgr    - hide root-manager app from pm  (default 1)
-#   .flag_hide_xposed - strip Xposed/LSPosed callbacks (default 1)
+#
+# Manager-app hiding is NOT a flag: it lives in allowlist.json as
+# `deny_root_manager` so there is exactly one source of truth.
 # ---------------------------------------------------------------------------
 ensure_flag() {
     key="$1"; default="${2:-1}"
@@ -110,8 +109,12 @@ ensure_flag() {
 }
 is_flag_enabled() {
     key="$1"
-    val=$(read_state "flag_$key" "1")
-    [ "$val" = "1" ]
+    file="$MODPATH/.flag_$key"
+    if [ -f "$file" ]; then
+        [ "$(cat "$file" 2>/dev/null)" = "1" ]
+    else
+        return 0
+    fi
 }
 set_flag() {
     key="$1"; value="$2"
@@ -122,8 +125,6 @@ ensure_all_flags() {
     ensure_flag spoof        "1"
     ensure_flag keystore     "1"
     ensure_flag zygisk       "1"
-    ensure_flag hide_mgr     "1"
-    ensure_flag hide_xposed  "1"
 }
 
 # ---------------------------------------------------------------------------
@@ -133,7 +134,7 @@ ALLOWLIST_FILE="$MODPATH/allowlist.json"
 HIDE_MGR_DEFAULT_PKGS="com.topjohnwu.magisk me.weishu.kernelsu me.bmax.apatch org.lsposed.manager de.robv.android.xposed.installer"
 
 allowlist_init() {
-    [ -f "$ALLOWLIST_FILE" ] || echo '{"allow":[],"deny_root_manager":true,"version":1}' > "$ALLOWLIST_FILE"
+    [ -f "$ALLOWLIST_FILE" ] || echo '{"allow":[],"deny_root_manager":false,"version":1}' > "$ALLOWLIST_FILE"
     chmod 644 "$ALLOWLIST_FILE" 2>/dev/null
 }
 
@@ -158,41 +159,87 @@ is_allowlisted() {
     echo "0"
 }
 
-# True if the manager-hide flag is on. When on, the Zygisk module also
-# filters these packages from `pm list packages` regardless of allowlist.
+# True when the user turned on "hide manager apps". It is stored as
+# deny_root_manager in allowlist.json (the single source of truth for
+# manager handling). When off, manager packages keep their auto-allow.
 is_manager_hidden() {
-    is_flag_enabled hide_mgr
+    [ -f "$ALLOWLIST_FILE" ] || return 1
+    deny=$(grep -o '"deny_root_manager":[ ]*\(true\|false\)' "$ALLOWLIST_FILE" 2>/dev/null | cut -d: -f2 | tr -d ' ')
+    [ "$deny" = "true" ]
 }
 
-# True if Xposed-hide is on. When on, the Zygisk module scrubs known
-# injection callbacks from Looper / Method dispatch.
-is_xposed_hidden() {
-    is_flag_enabled hide_xposed
+# Rebuild allowlist.json from the "allow" array on disk, optionally adding
+# $1 and removing $2. Rewriting the whole array keeps the file valid JSON
+# no matter how it is formatted (WebUI writes it pretty-printed).
+rebuild_allowlist() {
+    add_pkg=""; rm_pkg=""
+    [ -n "${2:-}" ] && { add_pkg="$1"; rm_pkg="$2"; }
+    [ -n "${1:-}" ] && [ -z "${2:-}" ] && add_pkg="$1"
+    [ -z "${1:-}" ] && [ -n "${2:-}" ] && rm_pkg="$2"
+    tmp="$ALLOWLIST_FILE.tmp.$$"
+    awk -v add_pkg="$add_pkg" -v rm_pkg="$rm_pkg" '
+        { buf = buf $0 "\n" }
+        END {
+            # Locate the "allow" array.
+            h = index(buf, "\"allow\"")
+            if (h == 0) { printf "%s", buf; exit }
+            s = index(substr(buf, h), "[") + h - 1
+            e = index(substr(buf, s), "]")
+            if (e == 0) { printf "%s", buf; exit }
+            e = s + e - 1
+
+            # Collect the current package tokens (bounded to the array,
+            # so the closing ] can never be escaped).
+            n = 0; p = s + 1
+            while (p < e) {
+                seg = substr(buf, p, e - p)
+                qs = index(seg, "\"")
+                if (qs == 0) break
+                sp = p + qs - 1
+                seg2 = substr(buf, sp + 1, e - sp - 1)
+                qe = index(seg2, "\"")
+                if (qe == 0) break
+                ep = sp + qe
+                tok[n++] = substr(buf, sp + 1, ep - sp - 1)
+                p = ep + 1
+            }
+
+            # Apply the add (only if new) and remove (drop every match).
+            if (add_pkg != "") {
+                seen = 0
+                for (i = 0; i < n; i++) if (tok[i] == add_pkg) seen = 1
+                if (!seen) tok[n++] = add_pkg
+            }
+            if (rm_pkg != "") {
+                m = 0
+                for (i = 0; i < n; i++) if (tok[i] != rm_pkg) tok[m++] = tok[i]
+                n = m
+            }
+
+            # Preserve the deny_root_manager setting.
+            deny = "true"
+            d = index(buf, "\"deny_root_manager\"")
+            if (d > 0 && index(substr(buf, d), "false") > 0) deny = "false"
+
+            printf "{\"allow\":["
+            for (i = 0; i < n; i++) {
+                if (i > 0) printf ","
+                printf "\"" tok[i] "\""
+            }
+            printf "],\"deny_root_manager\":%s,\"version\":1}\n", deny
+        }
+    ' "$ALLOWLIST_FILE" > "$tmp" 2>/dev/null && mv "$tmp" "$ALLOWLIST_FILE" 2>/dev/null
+    chmod 644 "$ALLOWLIST_FILE" 2>/dev/null
 }
 
 allowlist_add() {
     pkg="$1"
     [ -z "$pkg" ] && return 1
-    is_on=$(is_allowlisted "$pkg")
-    [ "$is_on" = "1" ] && return 0
     allowlist_init
-    tmp="$ALLOWLIST_FILE.tmp.$$"
-    awk -v pkg="$pkg" '
-        BEGIN { saw=0 }
-        /"allow":\s*\[/ {
-            print
-            saw=1
-            next
-        }
-        /\][^]]*$/ && saw==1 {
-            sub(/\][^]]*$/, ",\"" pkg "\"]")
-            saw=0
-            print
-            next
-        }
-        { print }
-    ' "$ALLOWLIST_FILE" > "$tmp" 2>/dev/null && mv "$tmp" "$ALLOWLIST_FILE" 2>/dev/null
-    chmod 644 "$ALLOWLIST_FILE" 2>/dev/null
+    if grep -q "\"$pkg\"" "$ALLOWLIST_FILE" 2>/dev/null; then
+        return 0
+    fi
+    rebuild_allowlist "$pkg" ""
     log_info "Allowlist add: $pkg"
 }
 
@@ -200,30 +247,26 @@ allowlist_remove() {
     pkg="$1"
     [ -z "$pkg" ] && return 1
     [ ! -f "$ALLOWLIST_FILE" ] && return 0
-    tmp="$ALLOWLIST_FILE.tmp.$$"
-    awk -v pkg="$pkg" '
-        { gsub("\"" pkg "\"", ""); gsub(/,,/, ","); print }
-    ' "$ALLOWLIST_FILE" > "$tmp" 2>/dev/null && mv "$tmp" "$ALLOWLIST_FILE" 2>/dev/null
-    chmod 644 "$ALLOWLIST_FILE" 2>/dev/null
+    rebuild_allowlist "" "$pkg"
     log_info "Allowlist remove: $pkg"
 }
 
 # ---------------------------------------------------------------------------
-# Boot-time property cleanup. v1.1: also populate the full vbmeta chain.
+# Boot-time property cleanup. v1.2 only sets values we can stand behind:
+# universal Google constants and stock states, no guessed placeholders.
 # ---------------------------------------------------------------------------
 spoof_boot_state() {
     log_info "Spoofing boot/locked state"
     for key in \
         ro.boot.flash.locked ro.boot.verifiedbootstate ro.boot.veritymode \
-        ro.boot.vbmeta.device_state ro.boot.vbmeta.size ro.boot.vbmeta.avb_version \
-        ro.boot.vbmeta.hash_alg ro.boot.vbmeta.digest \
+        ro.boot.vbmeta.device_state ro.boot.vbmeta.avb_version \
+        ro.boot.vbmeta.hash_alg \
         ro.secureboot.lockstate \
         sys.oem_unlock_allowed ro.boot.mode ro.bootmode \
         ro.debuggable ro.secure ro.adb.secure \
         ro.boot.selinux ro.boot.secureboot \
         vendor.boot.flash.locked vendor.boot.verifiedbootstate \
-        vendor.boot.vbmeta.device_state vendor.boot.vbmeta.size \
-        ro.boot.hardware.platform ro.boot.hardware; do
+        vendor.boot.vbmeta.device_state; do
         val=$(grep "^$key=" "$MODPATH/system.prop" 2>/dev/null | cut -d= -f2- | head -1)
         [ -n "$val" ] && resetprop_safe "$key" "$val"
     done
@@ -256,26 +299,11 @@ hide_keystore_leaks() {
     log_info "Keystore leaks stripped"
 }
 
-# ---------------------------------------------------------------------------
-# Per-app hide (shell-side). The Zygisk module does the real namespace work.
-# ---------------------------------------------------------------------------
-hide_for_app_shell() {
-    pkg="$1"
-    [ "$(is_allowlisted "$pkg")" = "1" ] && { log_info "Allowlist hit: $pkg"; return 0; }
-    # Best-effort env strip.
-    for var in MAGISK_VER MAGISK_VER_CODE MAGISK_DEBUG \
-               KSU KSU_VER KSU_VER_CODE \
-               APATCH APATCH_VER APATCH_VER_CODE; do
-        eval "export $var=" 2>/dev/null || true
-    done
-    log_info "Shell-side hide applied for $pkg"
-}
-
 is_boot_completed() { [ "$(resetprop sys.boot_completed 2>/dev/null)" = "1" ]; }
 
 boot_summary() {
     rm=$(detect_root_manager)
-    log_info "Manager: $rm | Boot: $(is_boot_completed && echo done || echo booting) | Allowlist: $ALLOWLIST_FILE | HideMgr: $(is_manager_hidden) | HideXposed: $(is_xposed_hidden)"
+    log_info "Manager: $rm | Boot: $(is_boot_completed && echo done || echo booting) | Allowlist: $ALLOWLIST_FILE | HideMgr: $(is_manager_hidden)"
 }
 
 # ---------------------------------------------------------------------------

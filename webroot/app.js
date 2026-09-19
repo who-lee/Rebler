@@ -21,26 +21,90 @@
   ]);
 
   // ---------- manager / exec detection ----------
+  // Order matters: Shizuku may be present alongside a manager browser, so
+  // it wins only when nothing root-native injected a bridge.
   function detectManager() {
-    if (typeof window.ksu    !== 'undefined') return 'kernelsu';
+    if (typeof window.ksu !== 'undefined') return 'kernelsu';
     if (typeof window.apatch !== 'undefined') return 'apatch';
+    if (window.shizuku && typeof window.shizuku.exec === 'function') return 'shizuku';
     return 'browser';
   }
   const mgr = detectManager();
   const readOnly = mgr === 'browser';
 
+  // Normalize whatever a bridge returns into { errno, stdout, stderr }.
+  //   - Shizuku: Promise of a plain stdout string.
+  //   - KernelSU/APatch 1-arg exec: a SYNCHRONOUS plain stdout string
+  //     (no object, so a raw `r.errno === 0` check is always false).
+  //   - KernelSU/APatch 3-arg exec(cmd, opts, cbName): calls
+  //     window[cbName](errno, stdout, stderr) asynchronously.
+  //   - Some standalone hosts JSON-encode the whole result.
+  function normalizeExecResult(r) {
+    if (typeof r === 'string') {
+      const t = r.trim();
+      if (t.startsWith('{') && t.endsWith('}')) {
+        try {
+          const j = JSON.parse(t);
+          if (j && typeof j === 'object' && 'errno' in j) {
+            return {
+              errno: j.errno | 0,
+              stdout: String(j.stdout || ''),
+              stderr: String(j.stderr || '')
+            };
+          }
+        } catch (e) { /* not JSON after all */ }
+      }
+      return { errno: 0, stdout: r, stderr: '' };
+    }
+    if (r && typeof r === 'object') {
+      return { errno: r.errno | 0, stdout: String(r.stdout || ''), stderr: String(r.stderr || '') };
+    }
+    return { errno: -1, stdout: '', stderr: String(r || '') };
+  }
+
+  // Call the KernelSU/APatch/standalone bridge. Prefers the async
+  // callback form (which both KSU and APatch implement), falls back to
+  // the legacy sync-string form when the 3-arg overload is missing.
+  function callManagerExec(bridge, cmd) {
+    return new Promise((resolve, reject) => {
+      const cbName = 'exec_cb_' + Date.now() + '_' + Math.floor(Math.random() * 1e9);
+      let settled = false;
+      const settle = (r) => {
+        if (settled) return;
+        settled = true;
+        try { delete window[cbName]; } catch (e) {}
+        resolve(normalizeExecResult(r));
+      };
+      window[cbName] = (errno, stdout, stderr) =>
+        settle({ errno: errno | 0, stdout: stdout || '', stderr: stderr || '' });
+      try {
+        const r = bridge.exec(cmd, '{}', cbName);
+        // Hosts that ignore the callback return synchronously instead.
+        if (r !== undefined && r !== null) settle(r);
+      } catch (e) {
+        // No 3-arg overload present: use the 1-arg sync form.
+        try {
+          settle(bridge.exec(cmd));
+        } catch (e2) {
+          settled = true;
+          try { delete window[cbName]; } catch (x) {}
+          reject(e2);
+        }
+      }
+    });
+  }
+
   async function exec(cmd) {
+    const bridge = window.ksu || window.apatch;
+    if (bridge) {
+      try { return await callManagerExec(bridge, cmd); }
+      catch (e) { return { errno: -1, stdout: '', stderr: (e && e.message) || 'exec failed' }; }
+    }
     if (window.shizuku && typeof window.shizuku.exec === 'function') {
       try {
-        const r = await window.shizuku.exec(cmd, { stdin:'', redirect:false });
-        return { errno: 0, stdout: (r || '').toString(), stderr: '' };
-      } catch (e) { /* fall through */ }
-    }
-    try {
-      if (window.ksu)    return await window.ksu.exec(cmd);
-      if (window.apatch) return await window.apatch.exec(cmd);
-    } catch (e) {
-      return { errno: -1, stdout: '', stderr: (e && e.message) || 'exec failed' };
+        const r = await window.shizuku.exec(cmd, { stdin: '', redirect: false });
+        return normalizeExecResult(r);
+      } catch (e) { return { errno: -1, stdout: '', stderr: (e && e.message) || 'shizuku failed' }; }
     }
     return { errno: -1, stdout: '', stderr: 'No exec API' };
   }
@@ -88,13 +152,16 @@
       const r = await exec('cat "' + ALLOWLIST_PATH + '" 2>/dev/null');
       if (r.errno === 0) raw = r.stdout;
     }
-    if (!raw) raw = '{"allow":[],"deny_root_manager":true,"version":1}';
+    if (!raw) raw = '{"allow":[],"deny_root_manager":false,"version":1}';
     let allow = [];
+    let deny = false;
     try {
       const j = JSON.parse(raw);
       if (Array.isArray(j.allow)) allow = j.allow.slice();
+      if (typeof j.deny_root_manager === 'boolean') deny = j.deny_root_manager;
+      else if (j.deny_root_manager === 'true') deny = true;
     } catch (e) {}
-    return { allow: allow, raw: raw };
+    return { allow: allow, deny: deny, raw: raw };
   }
 
   function escapeHtml(s) {
@@ -171,13 +238,10 @@
   }
 
   async function clearAllowlist() {
-    if (!confirm('Clear the allowlist? Root managers will stay auto-allowed (unless "Hide manager app" is on).')) return;
-    const cur = await loadAllowlist();
-    cur.allow = cur.allow.filter(p => MANAGER_PKGS.has(p));
-    if (await saveAllowlist(cur.allow)) {
-      renderAllowlist(cur);
-      toast('Allowlist cleared', 'success');
-    }
+    if (!confirm('Clear the allowlist? Apps become default-deny; managers stay auto-allowed unless "Hide manager apps" is on.')) return;
+    await saveAllowlist([]);
+    renderAllowlist(await loadAllowlist());
+    toast('Allowlist cleared', 'success');
   }
 
   // ---------- installed apps ----------
@@ -257,20 +321,22 @@
 
   // ---------- toggles ----------
   async function loadToggles() {
-    for (const id of ['t_spoof', 't_keystore', 't_zygisk', 't_hide_mgr']) {
+    for (const id of ['t_spoof', 't_keystore', 't_zygisk']) {
       if (readOnly) continue;
-      const v = await readConfig('flag_' + id, '1');
+      const v = await readConfig('flag_' + id.slice(2), '1');
       document.getElementById(id).checked = (v === '1');
     }
-    const sd = await readConfig('post_fs_data_done', '0');
+    const al = await loadAllowlist();
+    document.getElementById('t_hide_mgr').checked = al.deny;
+    const sd = await readConfig('state_post_fs_data_done', '0');
     document.getElementById('statusBadge').textContent = (sd === '1') ? 'ready' : 'rebooting';
   }
 
   async function saveToggles() {
     if (readOnly) { toast('Read-only', 'warn'); return; }
-    for (const id of ['t_spoof','t_keystore','t_zygisk','t_hide_mgr']) {
+    for (const id of ['t_spoof','t_keystore','t_zygisk']) {
       const v = document.getElementById(id).checked ? '1' : '0';
-      await writeConfig('flag_' + id, v);
+      await writeConfig('flag_' + id.slice(2), v);
     }
     const cur = await loadAllowlist();
     await saveAllowlist(cur.allow);
@@ -283,11 +349,18 @@
       el.textContent = 'browser (read-only)';
       document.getElementById('roBanner').classList.add('show');
     } else {
-      exec('echo $KSU $APATCH $MAGISK_VER').then(r => {
-        const o = (r.stdout || '');
-        el.textContent = /true/.test(o)     ? 'KernelSU' :
-                         /APATCH/.test(o)   ? 'APatch' :
-                         /MAGISK/.test(o)   ? 'Magisk'  : 'unknown';
+      // The bridge shell does not export KSU/APATCH env vars, so probe the
+      // manager's own filesystem instead. Falls back to the injected
+      // bridge name when the exec probe ends up useless.
+      exec('[ -d /data/adb/ap ] && echo APatch || { [ -d /data/adb/ksu ] && echo KernelSU; } || { [ -d /data/adb/magisk ] && echo Magisk; }').then(r => {
+        const o = (r.stdout || '').trim();
+        const known = /^(APatch|KernelSU|Magisk)$/.test(o);
+        el.textContent = known
+          ? o
+          : (mgr === 'shizuku' ? 'Shizuku'
+             : mgr === 'apatch' ? 'APatch'
+             : mgr === 'kernelsu' ? 'KernelSU'
+             : 'unknown');
       });
     }
   }

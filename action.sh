@@ -1,12 +1,12 @@
 #!/system/bin/sh
 # Rox2 - action (KSU/Magisk/APatch action button / play button)
 # When you tap the play icon on a module card in KernelSU Manager, this
-# script runs. v1.1 makes sure the WebUI opens on every root manager
+# script runs. v1.2 makes sure the WebUI opens on every root manager
 # by trying multiple launch paths in order.
 MODPATH="${0%/*}"
 . "$MODPATH/common_func.sh"
 
-VERSION="v1.1"
+VERSION="v1.2"
 WEBUI_PATH=""
 
 # Look for the WebUI index.html in the usual places.

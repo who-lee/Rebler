@@ -1,10 +1,10 @@
-# Rox2 v1.0
+# Rox2 v1.2
 
-First cut of Rox2, the root-hider I rewrote after the v1.4 of the previous project got roasted on Telegram. The full story is in the README; this file is the short list of what to do.
+Rox2 is the root-hider I rebuilt after the v1.4 of the previous project got roasted on Telegram. The full story is in the README; this file is the short list of what to do.
 
 ## Install
 
-1. Download `Rox2-v1.0.zip` below.
+1. Download `Rox2-v1.2.zip` below.
 2. Install via Magisk, KernelSU, or APatch.
 3. Reboot.
 4. Open the WebUI:
@@ -24,23 +24,29 @@ I deliberately did not ship:
 
 - **Fake Play Integrity attestation chains.** If you need **STRONG** Play Integrity, get a keybox from your own device via TrickyStore and point Rox2 at it. I am not your source for stolen Google intermediate CAs.
 - **A "passmark" percentage.** I cannot measure this; I will not invent it. The README has the actual list of what Rox2 does.
+- **Placeholder bootloader props.** v1.1 had guessed values for `vbmeta.size`, `vbmeta.digest`, `hardware.platform` and the like; v1.2 deletes them because a shared fake value is itself a fingerprint.
 
-The module passes **Play Integrity BASIC and DEVICE** reliably. If your bank app demands STRONG, see above.
+The module passes **Play Integrity BASIC** on the devices I test and makes a solid attempt at **DEVICE** (clean verified-boot chain + clean props). Banking/streaming apps that only require DEVICE typically accept it. If your bank app demands STRONG, see above — that requires real key attestation from your own hardware, not my module.
 
 ## After install
 
-If you want a clean unspoof (re-running the prop spoof without rebooting):
+If you want to re-apply the prop spoof without rebooting:
 
 ```bash
 adb shell sh /data/adb/modules/Rox2/hide_root.sh
 ```
 
-If the WebUI behaves oddly:
+If the WebUI behaves oddly, check the module log first — it tells you which
+flags are on and what the allowlist file looks like:
 
 ```bash
-adb shell sh /data/adb/modules/Rox2/uninstall.sh
-adb shell sh /data/adb/modules/Rox2/customize.sh
+adb shell tail -50 /data/local/tmp/Rox2.log
+adb shell cat /data/adb/modules/Rox2/allowlist.json
 ```
+
+Then re-open the WebUI (KernelSU/APatch: tap the module card; Magisk: tap the
+play button). If it still misbehaves, toggle the switch for the affected
+feature (Spoof / Keystore / Zygisk) and re-apply.
 
 ## Community
 

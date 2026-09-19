@@ -35,7 +35,7 @@
   <div class="banner info">
     <strong>Default-deny.</strong> Every app gets root hidden by default. Add a
     package to the allowlist below only if you trust it. Magisk / KernelSU / APatch
-    manager packages are auto-allowed unless "Hide manager app from pm list" is on.
+    manager packages are auto-allowed unless "Treat manager apps like any other app" is on.
   </div>
 
   <div class="section">
@@ -55,7 +55,7 @@
       <div class="row">
         <div class="info">
           <div class="label">Hide keystore / root-solution leaks</div>
-          <div class="desc"><code>resetprop -c</code> known marker props</div>
+          <div class="desc"><code>resetprop --delete</code> known marker props</div>
         </div>
         <label class="switch">
           <input type="checkbox" id="t_keystore" checked><span class="slider"></span>
@@ -72,11 +72,11 @@
       </div>
       <div class="row">
         <div class="info">
-          <div class="label">Hide root-manager app from pm list</div>
-          <div class="desc">Drop Magisk / KSU / APatch / LSPosed packages</div>
+          <div class="label">Treat root-manager apps like any other app</div>
+          <div class="desc">Remove the auto-allow for Magisk / KSU / APatch / LSPosed</div>
         </div>
         <label class="switch">
-          <input type="checkbox" id="t_hide_mgr" checked><span class="slider"></span>
+          <input type="checkbox" id="t_hide_mgr"><span class="slider"></span>
         </label>
       </div>
     </div>
@@ -155,7 +155,7 @@
 
   <div class="footer">
     Rox2 v1.2 &mdash; <a href="https://t.me/lestramk">@lestramk</a> &middot;
-    <a href="https://github.com/lee-muriithi-kingori/Rox2">GitHub</a>
+    <a href="https://github.com/who-lee/Rox2">GitHub</a>
   </div>
 </div>
 
