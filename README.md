@@ -40,7 +40,7 @@ The WebUI defaults to deny-everything. Every app that wants to see root must be 
 
 ## Install
 
-Download `Rebler-v1.3.zip` from the [Releases](../../releases). Open Magisk Manager / KernelSU / APatch and install the module from the local ZIP. Reboot. Open the WebUI (Magisk: tap the play button; KernelSU/APatch: tap the module card). The first time the WebUI opens, the allowlist is empty — apps get root hidden by default. Add packages to the allowlist only if you trust them.
+Download `Rebler-v1.3.1.zip` from the [Releases](../../releases). Open Magisk Manager / KernelSU / APatch and install the module from the local ZIP. Reboot. Open the WebUI (Magisk: tap the play button; KernelSU/APatch: tap the module card). The first time the WebUI opens, the allowlist is empty — apps get root hidden by default. Add packages to the allowlist only if you trust them.
 
 ```bash
 # adb shell

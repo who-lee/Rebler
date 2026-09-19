@@ -6,14 +6,20 @@
 MODPATH="${0%/*}"
 . "$MODPATH/common_func.sh"
 
-VERSION="v1.3"
+VERSION="v1.3.1"
 WEBUI_PATH=""
 
-# Look for the WebUI index.html in the usual places.
+# Look for the WebUI index.html in the usual places — every root manager
+# keeps the module somewhere else (Magisk: modules/, KSU: ksu/modules +
+# modules_update/, APatch: ap/modules).
 for p in \
     "/data/adb/modules_update/Rebler/webroot/index.html" \
     "$MODPATH/webroot/index.html" \
-    "/data/adb/modules/Rebler/webroot/index.html"; do
+    "/data/adb/modules/Rebler/webroot/index.html" \
+    "/data/adb/ksu/modules/Rebler/webroot/index.html" \
+    "/data/adb/ksu/modules_update/Rebler/webroot/index.html" \
+    "/data/adb/ap/modules/Rebler/webroot/index.html" \
+    "/data/adb/ap/modules_update/Rebler/webroot/index.html"; do
     [ -f "$p" ] && WEBUI_PATH="$p" && break
 done
 
@@ -36,6 +42,12 @@ if [ -z "$WEBUI_PATH" ]; then
     echo "[!] WebUI index.html missing."
     echo "    Expected at \$MODPATH/webroot/index.html"
     echo "    Reboot and reinstall if this persists."
+    echo ""
+    echo "Text fallback — manage the allowlist right here:"
+    if [ -x "$MODPATH/allowlist_manager.sh" ] || [ -f "$MODPATH/allowlist_manager.sh" ]; then
+        echo "  sh $MODPATH/allowlist_manager.sh list"
+        sh "$MODPATH/allowlist_manager.sh" list 2>/dev/null
+    fi
     exit 1
 fi
 

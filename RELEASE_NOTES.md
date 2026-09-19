@@ -1,16 +1,39 @@
+# Rebler v1.3.1
+
+Fix release for everything the v1.3 audit found: installer now passes
+the ZIP path correctly and detects KernelSU/APatch module dirs;
+ZIP entries carry real Unix permissions; `update.json` is stamped from
+the tag; the Zygisk layer reads config where the API allows, checks
+every mount call, skips child zygotes, and parses `deny_root_manager`
+strictly; the WebUI preserves the manager toggle, never hangs on a dead
+bridge, and disables controls in read-only mode. See CHANGELOG for the
+full list.
+
+---
+
 # Rebler v1.3
 
 Rebler is the root-hider I rebuilt after the v1.4 of the previous project got roasted on Telegram. v1.3 renames the module from Rox2 to Rebler. The full story is in the README; this file is the short list of what to do.
 
 ## Install
 
-1. Download `Rebler-v1.3.zip` below.
+1. Download `Rebler-v1.3.1.zip` below.
 2. Install via Magisk, KernelSU, or APatch.
 3. Reboot.
 4. Open the WebUI:
    - **Magisk**: tap the play button.
    - **KernelSU**: tap the Rebler module card.
    - **APatch**: tap the Rebler module card.
+
+## Companion: Rebler-Boot v1.0
+
+`Rebler-Boot` (`companion/boot`, id `ReblBoot`) goes one level deeper on
+bootloader-state signals: same locked verified-boot chain, strips
+`ro.boot.verifiedbooterror*` markers, and bind-mounts a clean
+`/proc/cmdline`. It is optional and standalone — install it the same way
+via your manager's Local Install menu, then reboot. It cannot defeat
+hardware-backed attestation; for STRONG integrity use TrickyStore with
+your own keybox.
 
 ## First-run
 

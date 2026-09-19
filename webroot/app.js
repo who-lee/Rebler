@@ -22,15 +22,24 @@
 
   // ---------- manager / exec detection ----------
   // Order matters: Shizuku may be present alongside a manager browser, so
-  // it wins only when nothing root-native injected a bridge.
+  // it wins only when nothing root-native injected a bridge. Magisk has
+  // no documented WebView bridge — its path is the action button — but if
+  // a host exposes a duck-typed window.magisk.exec we use it (see exec()).
   function detectManager() {
     if (typeof window.ksu !== 'undefined') return 'kernelsu';
     if (typeof window.apatch !== 'undefined') return 'apatch';
+    if (window.magisk && typeof window.magisk.exec === 'function') return 'magisk';
     if (window.shizuku && typeof window.shizuku.exec === 'function') return 'shizuku';
     return 'browser';
   }
   const mgr = detectManager();
   const readOnly = mgr === 'browser';
+
+  // True once loadToggles() has synced the checkboxes from disk. Until
+  // then saveAllowlist() must NOT trust the checkbox defaults — the HTML
+  // ships t_hide_mgr unchecked, and trusting it would clobber a stored
+  // deny:true on the first add/remove.
+  let togglesLoaded = false;
 
   // Normalize whatever a bridge returns into { errno, stdout, stderr }.
   //   - Shizuku: Promise of a plain stdout string.
@@ -57,7 +66,12 @@
       return { errno: 0, stdout: r, stderr: '' };
     }
     if (r && typeof r === 'object') {
-      return { errno: r.errno | 0, stdout: String(r.stdout || ''), stderr: String(r.stderr || '') };
+      // Only trust errno when the bridge actually sent one. An object
+      // without errno used to map to success via `undefined | 0 === 0`.
+      if ('errno' in r) {
+        return { errno: r.errno | 0, stdout: String(r.stdout || ''), stderr: String(r.stderr || '') };
+      }
+      return { errno: -1, stdout: '', stderr: 'bridge returned object without errno' };
     }
     return { errno: -1, stdout: '', stderr: String(r || '') };
   }
@@ -65,18 +79,37 @@
   // Call the KernelSU/APatch/standalone bridge. Prefers the async
   // callback form (which both KSU and APatch implement), falls back to
   // the legacy sync-string form when the 3-arg overload is missing.
+  // A 5s watchdog covers hosts that return undefined AND never fire the
+  // callback — without it boot() stalls forever on a hung bridge.
   function callManagerExec(bridge, cmd) {
     return new Promise((resolve, reject) => {
       const cbName = 'exec_cb_' + Date.now() + '_' + Math.floor(Math.random() * 1e9);
       let settled = false;
+      let timer = null;
       const settle = (r) => {
         if (settled) return;
         settled = true;
+        if (timer) clearTimeout(timer);
         try { delete window[cbName]; } catch (e) {}
         resolve(normalizeExecResult(r));
       };
       window[cbName] = (errno, stdout, stderr) =>
         settle({ errno: errno | 0, stdout: stdout || '', stderr: stderr || '' });
+      const fail = (e) => {
+        if (settled) return;
+        settled = true;
+        if (timer) clearTimeout(timer);
+        try { delete window[cbName]; } catch (x) {}
+        reject(e);
+      };
+      timer = setTimeout(() => {
+        // Callback never fired: last chance is the 1-arg sync form.
+        try {
+          settle(bridge.exec(cmd));
+        } catch (e2) {
+          fail(e2);
+        }
+      }, 5000);
       try {
         const r = bridge.exec(cmd, '{}', cbName);
         // Hosts that ignore the callback return synchronously instead.
@@ -86,9 +119,7 @@
         try {
           settle(bridge.exec(cmd));
         } catch (e2) {
-          settled = true;
-          try { delete window[cbName]; } catch (x) {}
-          reject(e2);
+          fail(e2);
         }
       }
     });
@@ -99,6 +130,13 @@
     if (bridge) {
       try { return await callManagerExec(bridge, cmd); }
       catch (e) { return { errno: -1, stdout: '', stderr: (e && e.message) || 'exec failed' }; }
+    }
+    // Duck-typed Magisk/standalone bridge: only used when it actually
+    // exposes exec(); Magisk's documented path remains the action button.
+    const extra = window.magisk;
+    if (extra && typeof extra.exec === 'function') {
+      try { return normalizeExecResult(await extra.exec(cmd)); }
+      catch (e) { return { errno: -1, stdout: '', stderr: (e && e.message) || 'magisk bridge failed' }; }
     }
     if (window.shizuku && typeof window.shizuku.exec === 'function') {
       try {
@@ -165,8 +203,8 @@
   }
 
   function escapeHtml(s) {
-    return String(s).replace(/[&<>"]/g, c => (
-      { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]
+    return String(s).replace(/[&<>"']/g, c => (
+      { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
     ));
   }
 
@@ -196,8 +234,18 @@
     });
   }
 
-  async function saveAllowlist(list) {
-    const deny = document.getElementById('t_hide_mgr')?.checked !== false;
+  // denyOverride lets saveToggles() write the checkbox state it just
+  // read; every other caller preserves whatever is on disk. Never trust
+  // the checkbox before loadToggles() ran (see togglesLoaded note).
+  async function saveAllowlist(list, denyOverride) {
+    let deny;
+    if (typeof denyOverride === 'boolean') {
+      deny = denyOverride;
+    } else if (togglesLoaded) {
+      deny = document.getElementById('t_hide_mgr').checked;
+    } else {
+      deny = (await loadAllowlist()).deny;
+    }
     const payload = JSON.stringify(
       { allow: list, deny_root_manager: deny, version: 1 },
       null, 2
@@ -292,7 +340,9 @@
       return;
     }
     const r = await exec('tail -80 ' + LOG_PATH + ' 2>/dev/null || echo "no logs yet"');
-    v.innerHTML = (r.stdout || 'No logs')
+    // On exec failure show stderr, not a misleading 'No logs'.
+    const text = r.errno === 0 ? (r.stdout || 'No logs') : (r.stderr || 'exec failed');
+    v.innerHTML = text
       .split('\n')
       .map(line => {
         let cls = '';
@@ -322,24 +372,36 @@
   // ---------- toggles ----------
   async function loadToggles() {
     for (const id of ['t_spoof', 't_keystore', 't_zygisk']) {
-      if (readOnly) continue;
+      const el = document.getElementById(id);
+      // Read-only: leave the HTML default visible but disable the
+      // control so it can never imply a state that was never loaded.
+      if (readOnly) { el.disabled = true; continue; }
       const v = await readConfig('flag_' + id.slice(2), '1');
-      document.getElementById(id).checked = (v === '1');
+      el.checked = (v === '1');
     }
     const al = await loadAllowlist();
-    document.getElementById('t_hide_mgr').checked = al.deny;
+    const hm = document.getElementById('t_hide_mgr');
+    hm.checked = al.deny;
+    if (readOnly) hm.disabled = true;
     const sd = await readConfig('state_post_fs_data_done', '0');
     document.getElementById('statusBadge').textContent = (sd === '1') ? 'ready' : 'rebooting';
+    togglesLoaded = true;
   }
 
+  // Flags and allowlist save separately: flipping spoof/keystore/zygisk
+  // must not rewrite allowlist.json, and the manager toggle only touches
+  // the file when its value actually changed.
   async function saveToggles() {
     if (readOnly) { toast('Read-only', 'warn'); return; }
     for (const id of ['t_spoof','t_keystore','t_zygisk']) {
       const v = document.getElementById(id).checked ? '1' : '0';
       await writeConfig('flag_' + id.slice(2), v);
     }
+    const deny = document.getElementById('t_hide_mgr').checked;
     const cur = await loadAllowlist();
-    await saveAllowlist(cur.allow);
+    if (cur.deny !== deny) {
+      await saveAllowlist(cur.allow, deny);
+    }
     toast('Saved', 'success');
   }
 
@@ -373,7 +435,7 @@
     document.getElementById('pkgInput').addEventListener('keydown', e => {
       if (e.key === 'Enter') document.getElementById('btnAdd').click();
     });
-    document.getElementById('btnSaveAllowlist').addEventListener('click', async () => {
+    document.getElementById('btnReloadAllowlist').addEventListener('click', async () => {
       renderAllowlist(await loadAllowlist());
       toast('Reloaded', 'success');
     });
@@ -393,11 +455,13 @@
   }
 
   async function boot() {
+    // Wire controls first so nothing stays dead while the async probes
+    // run (or hang behind the exec watchdog).
+    wire();
     updateRootBadge();
     await loadToggles();
     renderAllowlist(await loadAllowlist());
     await loadLogs();
-    wire();
     setInterval(async () => {
       renderAllowlist(await loadAllowlist());
       if (!readOnly) loadLogs();

@@ -3,7 +3,13 @@
 # Smaller surface than Rebler: only what touches bootloader-state signals.
 
 MODPATH="${0%/*}"
-[ -z "$MODPATH" ] && MODPATH=/data/adb/modules/ReblBoot
+# Same probe as Rebler: KSU uses ksu/modules, APatch uses ap/modules.
+if [ -z "$MODPATH" ] || [ "$MODPATH" = "$0" ]; then
+    MODPATH=/data/adb/modules/ReblBoot
+    for base in /data/adb/ksu/modules /data/adb/ap/modules /data/adb/modules; do
+        if [ -d "$base/ReblBoot" ]; then MODPATH="$base/ReblBoot"; break; fi
+    done
+fi
 
 LOG_FILE=/data/local/tmp/ReblBoot.log
 
@@ -19,6 +25,7 @@ resetprop_safe() {
     tries=0
     while [ $tries -lt 5 ]; do
         if resetprop -n "$target" "$value" 2>/dev/null; then return 0; fi
+        if resetprop "$target" "$value" 2>/dev/null; then return 0; fi
         tries=$((tries + 1)); sleep 0.2
     done
     return 1
@@ -33,14 +40,14 @@ resetprop_if_diff() {
 delprop_if_exists() {
     target="$1"
     current=$(resetprop "$target" 2>/dev/null || true)
-    [ -n "$current" ] && resetprop --delete "$target" 2>/dev/null
+    [ -n "$current" ] && { resetprop --delete "$target" 2>/dev/null || resetprop -d "$target" 2>/dev/null; }
 }
 
 # ---------------------------------------------------------------------------
 # Boot-state prop scrub. The list is REAL properties — the names I cannot
 # back with evidence I leave out.
 # ---------------------------------------------------------------------------
-known_blu_leaks() {
+known_boot_leaks() {
     # Verified-boot error markers. If ANY of these exist, the kernel has
     # already signaled an unverified boot to user space — we strip them.
     for leak in \

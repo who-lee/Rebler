@@ -38,11 +38,22 @@ jobs:
     - name: Build module ZIP
       run: |
         chmod +x build.sh
-        ./build.sh
+        # On tag builds the ZIP/update.json follow the tag, not whatever
+        # module.prop says — single-sources the release version.
+        if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+          ./build.sh "${{ github.ref_name }}"
+        else
+          ./build.sh
+        fi
 
     - name: List artifacts
       run: |
         ls -la output/
+
+    - name: Assert installable artifact
+      run: |
+        python3 -c "import zipfile,sys,glob; z=zipfile.ZipFile(glob.glob('output/*.zip')[0]); sys.exit(0 if 'module.prop' in z.namelist() else 1)" \
+          || { echo "module.prop not at ZIP root"; exit 1; }
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
@@ -64,7 +75,7 @@ jobs:
         body: |
           # Rebler ${{ github.ref_name }}
 
-          See [CHANGELOG.md](../blob/main/CHANGELOG.md) for what is in this release.
+          See [CHANGELOG.md](https://github.com/who-lee/Rebler/blob/main/CHANGELOG.md) for what is in this release.
 
           ## Install
           1. Download `Rebler-${{ github.ref_name }}.zip`

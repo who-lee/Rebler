@@ -7,6 +7,8 @@ log_msg "=== Rebler-Boot service v1.0 ==="
 
 # Re-apply boot-state props after boot shifts the namespace, and
 # scrub verified-boot error markers that some ROMs re-set under us.
+# (Full system.prop coverage comes from the manager auto-apply; this is
+# the re-assert subset, same as post-fs-data.sh.)
 for key in \
     ro.boot.flash.locked ro.boot.verifiedbootstate \
     ro.secureboot.lockstate ro.boot.vbmeta.device_state \
@@ -14,7 +16,7 @@ for key in \
     val=$(grep "^$key=" "$MODPATH/system.prop" 2>/dev/null | cut -d= -f2- | head -1)
     [ -n "$val" ] && resetprop_if_diff "$key" "$val"
 done
-known_blu_leaks
+known_boot_leaks
 
 log_msg "INFO" "service done"
 exit 0

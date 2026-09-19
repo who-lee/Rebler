@@ -12,7 +12,7 @@
 #
 # Usage:
 #   ./build.sh                       # default version (read from module.prop)
-#   ./build.sh v1.3                  # explicit version
+#   ./build.sh v1.3.1                # explicit version
 #   ./build.sh --check-only          # validate but don't package
 
 set -u
@@ -23,7 +23,7 @@ OUTPUT_DIR="$ROOT_DIR/output"
 
 MODULE_ID="Rebler"
 MODULE_NAME="Rebler"
-DEFAULT_VERSION="$(grep '^version=' "$ROOT_DIR/module.prop" 2>/dev/null | cut -d= -f2 || echo v1.3)"
+DEFAULT_VERSION="$(grep '^version=' "$ROOT_DIR/module.prop" 2>/dev/null | cut -d= -f2 || echo v1.3.1)"
 VERSION="${1:-$DEFAULT_VERSION}"
 VERSION_CODE="$(grep '^versionCode=' "$ROOT_DIR/module.prop" 2>/dev/null | cut -d= -f2)"
 CHECK_ONLY=false
@@ -68,6 +68,35 @@ validate() {
     grep -q '^id=Rebler$'         "$ROOT_DIR/module.prop"     || add_err "module.prop id != Rebler"
     grep -q '^versionCode='     "$ROOT_DIR/module.prop"     || add_err "module.prop versionCode missing"
     grep -q '^webroot=webroot$' "$ROOT_DIR/module.prop"     || add_err "module.prop webroot missing"
+    grep -qE '^versionCode=[0-9]+$' "$ROOT_DIR/module.prop"  || add_err "module.prop versionCode not numeric"
+
+    # module.prop <-> update.json version agreement (OTA source of truth)
+    prop_ver="$(grep '^version=' "$ROOT_DIR/module.prop" 2>/dev/null | cut -d= -f2)"
+    json_ver="$(grep '"version"' "$ROOT_DIR/update.json" 2>/dev/null | head -1 | sed 's/.*"[vV]ersion"[ ]*:[ ]*"//; s/".*//')"
+    [ -n "$prop_ver" ] && [ -n "$json_ver" ] && [ "$prop_ver" != "$json_ver" ] \
+        && add_err "version drift: module.prop=$prop_ver update.json=$json_ver"
+    prop_code="$(grep '^versionCode=' "$ROOT_DIR/module.prop" 2>/dev/null | cut -d= -f2)"
+    json_code="$(grep '"versionCode"' "$ROOT_DIR/update.json" 2>/dev/null | head -1 | sed 's/.*://; s/[^0-9]//g')"
+    [ -n "$prop_code" ] && [ -n "$json_code" ] && [ "$prop_code" != "$json_code" ] \
+        && add_err "versionCode drift: module.prop=$prop_code update.json=$json_code"
+
+    # update.json must be parseable JSON with the OTA fields managers need.
+    # (cygpath conversion: native Windows Python cannot open /c/... paths.)
+    if command -v python3 >/dev/null 2>&1; then
+        if command -v cygpath >/dev/null 2>&1; then
+            PY_JSON="$(cygpath -w "$ROOT_DIR/update.json")"
+        else
+            PY_JSON="$ROOT_DIR/update.json"
+        fi
+        PY_JSON="$PY_JSON" python3 -c "import json,os; d=json.load(open(os.environ['PY_JSON'])); assert d.get('zipUrl') and d.get('version'), 'missing keys'" 2>/dev/null \
+            || add_err "update.json is not valid OTA JSON (needs version + zipUrl)"
+    fi
+
+    # WebUI + native sources must exist (they ship in the ZIP)
+    for f in webroot/index.html webroot/app.js webroot/styles.css \
+             zygisk_src/jni/module.cpp zygisk_src/jni/Android.mk zygisk_src/jni/zygisk.hpp; do
+        [ -f "$ROOT_DIR/$f" ] || add_err "missing: $f"
+    done
 
     # All shell scripts: sh -n
     for f in post-fs-data.sh service.sh customize.sh uninstall.sh \
@@ -126,8 +155,11 @@ build_native() {
         ok "native build succeeded"
         return 0
     fi
-    warn "native build failed — see $LOG_DIR/ndk.log"
-    return 0  # not fatal: shell-script layer still works
+    err "native build failed — see $LOG_DIR/ndk.log"
+    err "NDK was present but the compile failed: refusing to ship a"
+    err "shell-only ZIP under a native version name. Fix the C++ or"
+    err "unset ANDROID_NDK_HOME for an honest shell-only build."
+    exit 1
 }
 
 # ---------------------------- assembly --------------------------------------
@@ -147,7 +179,6 @@ cp "$ROOT_DIR/common_func.sh" "$ROOT_DIR/allowlist_manager.sh" "$ASSEMBLY/"
 cp "$ROOT_DIR/allowlist.json" "$ASSEMBLY/"
 cp "$ROOT_DIR/README.md" "$ROOT_DIR/CHANGELOG.md" "$ROOT_DIR/RELEASE_NOTES.md" "$ASSEMBLY/"
 cp "$ROOT_DIR/LICENSE" "$ASSEMBLY/"
-cp "$ROOT_DIR/build.sh" "$ASSEMBLY/"
 cp -r "$ROOT_DIR/META-INF" "$ASSEMBLY/"
 cp -r "$ROOT_DIR/webroot" "$ASSEMBLY/"
 
@@ -179,11 +210,13 @@ cat > "$ASSEMBLY/update.json" <<EOF
 }
 EOF
 
-# Permissions
-find "$ASSEMBLY" -type f -name '*.sh'    -exec chmod 0755 {} +
-find "$ASSEMBLY" -type f -name 'update-binary' -exec chmod 0755 {} +
+# Permissions — order matters: directories first, then the 0644 default
+# for every file, then 0755 back on top for scripts. (The old order ran
+# 0644 last and silently stripped the exec bit from every .sh.)
 find "$ASSEMBLY" -type d -exec chmod 0755 {} +
 find "$ASSEMBLY" -type f -exec chmod 0644 {} +
+find "$ASSEMBLY" -type f -name '*.sh'    -exec chmod 0755 {} +
+find "$ASSEMBLY" -type f -name 'update-binary' -exec chmod 0755 {} +
 
 # Build ZIP
 ZIP_NAME="${MODULE_NAME}-${VERSION}.zip"
@@ -202,14 +235,31 @@ elif command -v python3 >/dev/null 2>&1 && python3 -c "exit(0)" 2>/dev/null; the
     fi
     export PY_SRC PY_OUT
     python3 - <<PY
-import os, zipfile
+import os, stat, zipfile
 src = os.environ['PY_SRC']; out = os.environ['PY_OUT']
 with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as z:
-    for r, _, files in os.walk(src):
+    for r, dirs, files in os.walk(src):
+        for d in dirs:
+            p = os.path.join(r, d)
+            arc = os.path.relpath(p, src).replace(os.sep, '/') + '/'
+            zi = zipfile.ZipInfo(arc)
+            zi.compress_type = zipfile.ZIP_DEFLATED
+            zi.external_attr = (0o755 << 16) | 0x10
+            z.writestr(zi, '')
         for f in files:
             p = os.path.join(r, f)
             arc = os.path.relpath(p, src).replace(os.sep, '/')
-            z.write(p, arc)
+            # Mirror the chmod pass above: scripts + update-binary are
+            # 0755, everything else 0644. zipfile does not do this for us.
+            # (compress_type must be set per-ZipInfo: writestr() uses the
+            # ZipInfo's own type, default STORED, ignoring the ZipFile's.)
+            base = os.path.basename(p)
+            mode = 0o755 if (base.endswith('.sh') or base == 'update-binary') else 0o644
+            zi = zipfile.ZipInfo(arc)
+            zi.compress_type = zipfile.ZIP_DEFLATED
+            zi.external_attr = (mode << 16)
+            with open(p, 'rb') as fh:
+                z.writestr(zi, fh.read())
 PY
 elif command -v node >/dev/null 2>&1 && command -v powershell.exe >/dev/null 2>&1; then
     log "ZIP via node -> PowerShell Compress-Archive"
@@ -230,9 +280,13 @@ fi
 if [ ! -f "$ZIP_OUT" ]; then err "ZIP did not get created"; exit 1; fi
 ok "built $ZIP_OUT ($(file_size "$ZIP_OUT") bytes)"
 
-# Mirror to the standard "ready to release" filename
-if [ "$OUTPUT_DIR/$ZIP_NAME" != "$OUTPUT_DIR/Rebler-$VERSION.zip" ]; then
-    cp "$ZIP_OUT" "$OUTPUT_DIR/Rebler-$VERSION.zip"
+# Sanity: module.prop must sit at the ZIP root or no manager will install it.
+if have_zip; then
+    unzip -l "$ZIP_OUT" 2>/dev/null | grep -q '^.* module\.prop$' \
+        || { err "module.prop not at ZIP root — uninstallable artifact"; exit 1; }
+elif command -v python3 >/dev/null 2>&1; then
+    ZIP_OUT="$ZIP_OUT" python3 -c "import zipfile,os,sys; z=zipfile.ZipFile(os.environ.get('ZIP_OUT','')); sys.exit(0 if 'module.prop' in z.namelist() else 1)" 2>/dev/null \
+        || { err "module.prop not at ZIP root — uninstallable artifact"; exit 1; }
 fi
 
 # Checksum
@@ -255,9 +309,9 @@ fi
 ok "Done. Output: $OUTPUT_DIR/"
 
 # The GitHub workflow uploads output/update.json for each release, so it
-# must exist next to the ZIP. Copy the repo-level one (it lives alongside
-# module.prop and carries the same tag) into the output dir.
-cp "$ROOT_DIR/update.json" "$OUTPUT_DIR/update.json"
+# must be the freshly stamped assembly copy (right tag + zipUrl), not the
+# repo-level file which is only bumped by hand between releases.
+cp "$ASSEMBLY/update.json" "$OUTPUT_DIR/update.json"
 ok "update.json staged to output/"
 
 ls -la "$OUTPUT_DIR" 2>/dev/null || true

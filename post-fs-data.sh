@@ -5,7 +5,7 @@
 MODPATH="${0%/*}"
 . "$MODPATH/common_func.sh"
 
-log_info "=== post-fs-data v1.3 start ==="
+log_info "=== post-fs-data v1.3.1 start ==="
 
 if [ "$(resetprop ro.boot.safe_mode 2>/dev/null)" = "1" ]; then
     log_warn "Safe mode — minimal run only"
@@ -32,5 +32,5 @@ if is_flag_enabled zygisk;   then scrub_root_paths;    else log_info "zygisk mou
 boot_summary
 write_state post_fs_data_done 1
 
-log_info "=== post-fs-data v1.3 complete ==="
+log_info "=== post-fs-data v1.3.1 complete ==="
 exit 0

@@ -2,6 +2,55 @@
 
 All notable changes to Rebler are documented here. I write the dates as I cut the release.
 
+## v1.3.1 (2026-09-19)
+
+Fix release for the full audit pass over v1.3. No new features; everything below is a correctness fix.
+
+### Fixed — installer / packaging
+
+- **`update-binary` passed the wrong arg as the ZIP path** (`$2` is the outfd, `$3` is the ZIP). Recovery installs extracted nothing. Now `ZIPFILE="$3"` with an abort if empty.
+- **Hardcoded Magisk module dir** in `update-binary`, `common_func.sh`, and `action.sh`. All three now probe `ksu/modules` → `ap/modules` → `modules`; the WebUI search list covers the `_update` dirs too.
+- **ZIP permission strip.** The chmod pass ran `0644` last, clearing every exec bit, and the python-zipfile path stored no Unix modes at all. Order is now dirs → `0644` files → `0755` scripts, `external_attr` is stamped per entry, and the build fails if `module.prop` is not at the ZIP root.
+- **`build.sh` shipped itself** inside the module ZIP. Removed.
+- **Silent shell-only ZIPs.** NDK present but compile failed used to warn-and-continue under a native version name. Now fatal; unset `ANDROID_NDK_HOME` for an honest shell-only build.
+- **`output/update.json` discarded the stamped copy.** The release asset is now the assembly-stamped file (right tag + zipUrl). Tag builds run `./build.sh "$tag"` so the version follows the tag, and CI asserts `module.prop` at ZIP root.
+
+### Fixed — Zygisk native
+
+- **Config read in `onLoad()`** where `getModuleDir()` is invalid (returns -1 on some solutions → allowlist silently ignored). Moved to `preAppSpecialize()`, fresh per process.
+- **Unchecked `MS_SLAVE` remount** (failure would detach mounts globally) → checked `MS_PRIVATE` with bail-out.
+- **`GetStringUTFChars` without null/OOM/Exception checks** → guarded; the per-specialize package log line is gone (it fingerprinted installs).
+- **Loose `deny_root_manager` parse** (any "false" in the file tail flipped it) → strict token parse after the colon. Same strictness in the shell `allowlist_deny_value` helper and the awk rebuild path.
+- **Child zygotes isolated** (polluted every child) → skipped via `is_child_zygote`.
+- **`read()` without EINTR retry, truncation hack** → `TEMP_FAILURE_RETRY`, oversize files fail safe; malformed JSON marks `parse_ok=false`.
+- **Hide list** gains `/data/adb/magisk.db`; umount failures now logged (except ENOENT). Dropped unlinked `-landroid -ldl`.
+
+### Fixed — shell
+
+- **Substring package match** (`com.app` matched `com.app.pro`) → exact-token `allowlist_contains`.
+- **No package validation on add** (quotes/newlines corrupted JSON) → dotted-identifier reject.
+- **Untagged tmpfiles, no lock** → `mktemp` + lockdir with bounded wait.
+- **`resetprop -n` / `--delete` without fallback** → plain and `-d` fallbacks for KSU/APatch builds.
+- **GNU-only `grep -oE` + word-splitting sweeps** → `while read` + `case` filter.
+- **`boot_summary` embedded a void command substitution** → explicit branches. `service.sh` inits before summarizing. `uninstall.sh` removes the log and stale tmps. `action.sh` falls back to a text allowlist listing when the WebUI is missing. `customize.sh` uses `${MAGISK_VER:-}` and no longer `set_perm`s the unshipped `build.sh`.
+
+### Fixed — WebUI
+
+- **Manager toggle clobbered** (`?.checked !== false` defaulted deny=true; any add/remove before toggle-load reset a stored deny) → disk value preserved until `loadToggles()` runs; flag saves and allowlist saves split (toggle flips only rewrite the file on actual change).
+- **Hung bridge stalled boot forever** → 5s watchdog with 1-arg sync fallback.
+- **Object without errno counted as success** → `errno:-1` unless the key exists.
+- **No Magisk bridge path** → duck-typed `window.magisk.exec` attempt; action button remains documented.
+- **Read-only toggles interactive at HTML defaults** → disabled until loaded; `wire()` runs before the async probes; log viewer shows stderr on failure; `btnSaveAllowlist` renamed `btnReloadAllowlist`; `escapeHtml` covers `'`.
+
+### Fixed — companion + docs
+
+- **New `companion/boot/CHANGELOG.md`** (update.json linked a 404).
+- **README install used `adb install`** on a Magisk ZIP → `adb push` + Local Install.
+- **README overstated the bind fallback** → matches the honest code comment.
+- **`action.sh` always printed "scrubbed: yes"** → checks log + live cmdline.
+- **Wrong install-order claim** (dir sort runs ReblBoot first) → idempotency note.
+- **Donate URL mismatch** → canonical `sponsors/who-lee`. Release notes gain the companion section. `known_blu_leaks` typo fixed; prop-loop vs `system.prop` reliance documented.
+
 ## v1.3 (2026-09-19)
 
 ### Changed

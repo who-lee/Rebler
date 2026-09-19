@@ -3,7 +3,15 @@
 # I keep these POSIX-compatible so they run on bash, ash, mksh — whatever Android gives me.
 
 MODPATH="${0%/*}"
-[ -z "$MODPATH" ] && MODPATH=/data/adb/modules/Rebler
+# Fallback depends on the root solution: KernelSU uses ksu/modules, APatch
+# uses ap/modules, Magisk uses modules. ${0%/*} fails when invoked bare
+# (no slash in $0), so probe the known bases in order.
+if [ -z "$MODPATH" ] || [ "$MODPATH" = "$0" ]; then
+    MODPATH=/data/adb/modules/Rebler
+    for base in /data/adb/ksu/modules /data/adb/ap/modules /data/adb/modules; do
+        if [ -d "$base/Rebler" ]; then MODPATH="$base/Rebler"; break; fi
+    done
+fi
 
 LOG_FILE=/data/local/tmp/Rebler.log
 
@@ -57,7 +65,10 @@ resetprop_safe() {
     target="$1"; value="$2"
     tries=0
     while [ $tries -lt 5 ]; do
+        # Magisk resetprop supports -n (set as new); some KSU/APatch
+        # builds only know the plain form. Try both.
         if resetprop -n "$target" "$value" 2>/dev/null; then return 0; fi
+        if resetprop "$target" "$value" 2>/dev/null; then return 0; fi
         tries=$((tries + 1))
         sleep 0.2
     done
@@ -88,8 +99,10 @@ delprop_if_exists() {
     [ -z "$current" ] && return 0
     # resetprop --delete makes the property invisible to readers. The old
     # -c flag now means "compact" in Magisk 27's Rust resetprop, so --delete
-    # is the one that actually clears the property.
-    resetprop --delete "$target" 2>/dev/null || true
+    # is the one that actually clears the property. Some KSU/APatch builds
+    # only know the short -d form — try both.
+    resetprop --delete "$target" 2>/dev/null \
+        || resetprop -d "$target" 2>/dev/null || true
 }
 
 # ---------------------------------------------------------------------------
@@ -138,6 +151,28 @@ allowlist_init() {
     chmod 644 "$ALLOWLIST_FILE" 2>/dev/null
 }
 
+# Strict single-source read of deny_root_manager: prints "true" only for
+# an explicit `"deny_root_manager": true` token, "false" otherwise.
+# (The old code matched any "false" anywhere in the file tail, so a
+# package literally named *false* flipped the switch. Uses grep -E —
+# toybox grep without -E mishandles \(true\|false\) alternations.)
+allowlist_deny_value() {
+    tok=$(grep -oE '"deny_root_manager"[ ]*:[ ]*(true|false)' "$ALLOWLIST_FILE" 2>/dev/null | head -1 | grep -oE '(true|false)[ ]*$' | tr -d ' ')
+    [ "$tok" = "true" ] && echo "true" || echo "false"
+}
+
+# Exact package membership: the token must be followed by , or ] so
+# com.app never matches com.app.pro. Falls back to -F substring only if
+# grep -E is unavailable (then callers stay fail-open, never fail-closed).
+allowlist_contains() {
+    pkg="$1"
+    esc=$(printf '%s' "$pkg" | sed 's/[][\.*^$/]/\\&/g')
+    if grep -qE "\"$esc\"(,|[]])" "$ALLOWLIST_FILE" 2>/dev/null; then
+        return 0
+    fi
+    grep -qF "\"$pkg\"" "$ALLOWLIST_FILE" 2>/dev/null
+}
+
 # Returns "1" if the package is on the allowlist, "0" otherwise. Manager
 # packages are auto-allowed only when the user has not toggled
 # `deny_root_manager` in the file.
@@ -145,12 +180,12 @@ is_allowlisted() {
     pkg="$1"
     [ -z "$pkg" ] && { echo "0"; return; }
     allowlist_init
-    if grep -q "\"$pkg\"" "$ALLOWLIST_FILE" 2>/dev/null; then
+    if allowlist_contains "$pkg"; then
         echo "1"; return
     fi
     # Check the "deny_root_manager" flag. If false, root manager packages
     # stay auto-allowed so the manager can run.
-    deny=$(grep -o '"deny_root_manager":[ ]*\(true\|false\)' "$ALLOWLIST_FILE" 2>/dev/null | cut -d: -f2 | tr -d ' ')
+    deny=$(allowlist_deny_value)
     if [ "$deny" = "false" ]; then
         for mp in $HIDE_MGR_DEFAULT_PKGS; do
             [ "$pkg" = "$mp" ] && { echo "1"; return; }
@@ -164,19 +199,27 @@ is_allowlisted() {
 # manager handling). When off, manager packages keep their auto-allow.
 is_manager_hidden() {
     [ -f "$ALLOWLIST_FILE" ] || return 1
-    deny=$(grep -o '"deny_root_manager":[ ]*\(true\|false\)' "$ALLOWLIST_FILE" 2>/dev/null | cut -d: -f2 | tr -d ' ')
-    [ "$deny" = "true" ]
+    [ "$(allowlist_deny_value)" = "true" ]
 }
 
 # Rebuild allowlist.json from the "allow" array on disk, optionally adding
 # $1 and removing $2. Rewriting the whole array keeps the file valid JSON
 # no matter how it is formatted (WebUI writes it pretty-printed).
+# Serialized with a lockdir so concurrent WebUI + CLI writers cannot
+# interleave; tmp via mktemp so two writers never share a path.
 rebuild_allowlist() {
     add_pkg=""; rm_pkg=""
     [ -n "${2:-}" ] && { add_pkg="$1"; rm_pkg="$2"; }
     [ -n "${1:-}" ] && [ -z "${2:-}" ] && add_pkg="$1"
     [ -z "${1:-}" ] && [ -n "${2:-}" ] && rm_pkg="$2"
-    tmp="$ALLOWLIST_FILE.tmp.$$"
+    lockdir="$ALLOWLIST_FILE.lock"
+    waits=0
+    while ! mkdir "$lockdir" 2>/dev/null; do
+        waits=$((waits + 1))
+        [ "$waits" -gt 50 ] && { log_warn "allowlist lock busy, proceeding unlocked"; break; }
+        sleep 0.1
+    done
+    tmp="$(mktemp "$ALLOWLIST_FILE.tmp.XXXXXX" 2>/dev/null || echo "$ALLOWLIST_FILE.tmp.$$")"
     awk -v add_pkg="$add_pkg" -v rm_pkg="$rm_pkg" '
         { buf = buf $0 "\n" }
         END {
@@ -216,10 +259,26 @@ rebuild_allowlist() {
                 n = m
             }
 
-            # Preserve the deny_root_manager setting.
-            deny = "true"
+            # Preserve the deny_root_manager setting with a strict token
+            # parse: only `"deny_root_manager": true` (optional spaces)
+            # keeps true. The old code flipped on any "false" string
+            # anywhere after the key. Plain string ops only — no match()
+            # or ERE, so this runs on toybox awk too.
+            deny = "false"
             d = index(buf, "\"deny_root_manager\"")
-            if (d > 0 && index(substr(buf, d), "false") > 0) deny = "false"
+            if (d > 0) {
+                # "\"deny_root_manager\"" is 19 chars; rest starts at the colon.
+                rest = substr(buf, d + 19)
+                while (substr(rest, 1, 1) == " " || substr(rest, 1, 1) == "\t" || substr(rest, 1, 1) == "\r" || substr(rest, 1, 1) == "\n") rest = substr(rest, 2)
+                if (substr(rest, 1, 1) == ":") {
+                    rest = substr(rest, 2)
+                    while (substr(rest, 1, 1) == " " || substr(rest, 1, 1) == "\t" || substr(rest, 1, 1) == "\r" || substr(rest, 1, 1) == "\n") rest = substr(rest, 2)
+                    if (substr(rest, 1, 4) == "true") {
+                        after = substr(rest, 5, 1)
+                        if (after == "" || after == " " || after == "\t" || after == "\r" || after == "\n" || after == "," || after == "}") deny = "true"
+                    }
+                }
+            }
 
             printf "{\"allow\":["
             for (i = 0; i < n; i++) {
@@ -229,14 +288,22 @@ rebuild_allowlist() {
             printf "],\"deny_root_manager\":%s,\"version\":1}\n", deny
         }
     ' "$ALLOWLIST_FILE" > "$tmp" 2>/dev/null && mv "$tmp" "$ALLOWLIST_FILE" 2>/dev/null
+    rm -f "$tmp" 2>/dev/null
+    rmdir "$lockdir" 2>/dev/null
     chmod 644 "$ALLOWLIST_FILE" 2>/dev/null
 }
 
 allowlist_add() {
     pkg="$1"
     [ -z "$pkg" ] && return 1
+    # Package ids are dotted identifiers — anything else (quotes,
+    # newlines, JSON metachars) would corrupt the file. The WebUI
+    # validates the same way; the CLI path must not be weaker.
+    case "$pkg" in
+        *[!A-Za-z0-9_.]*|"") log_warn "Allowlist add rejected: $pkg"; return 1 ;;
+    esac
     allowlist_init
-    if grep -q "\"$pkg\"" "$ALLOWLIST_FILE" 2>/dev/null; then
+    if allowlist_contains "$pkg"; then
         return 0
     fi
     rebuild_allowlist "$pkg" ""
@@ -270,11 +337,17 @@ spoof_boot_state() {
         val=$(grep "^$key=" "$MODPATH/system.prop" 2>/dev/null | cut -d= -f2- | head -1)
         [ -n "$val" ] && resetprop_safe "$key" "$val"
     done
-    for prop in $(resetprop 2>/dev/null | grep -oE 'ro\..*\.build\.tags' 2>/dev/null); do
-        resetprop_safe "$prop" "release-keys"
-    done
-    for prop in $(resetprop 2>/dev/null | grep -oE 'ro\..*\.build\.type' 2>/dev/null); do
-        resetprop_safe "$prop" "user"
+    # Build-tag/type sweep without GNU grep -o or word-splitting hazards:
+    # list every property once, filter with case, set one per line.
+    resetprop 2>/dev/null | while IFS= read -r line; do
+        case "$line" in
+            \[ro.*\.build\.tags\]*|ro.*\.build\.tags\]*)
+                prop=$(printf '%s' "$line" | sed 's/^[^a-zA-Z0-9_.]*//; s/[]: ].*//')
+                [ -n "$prop" ] && resetprop_safe "$prop" "release-keys" ;;
+            \[ro.*\.build\.type\]*|ro.*\.build\.type\]*)
+                prop=$(printf '%s' "$line" | sed 's/^[^a-zA-Z0-9_.]*//; s/[]: ].*//')
+                [ -n "$prop" ] && resetprop_safe "$prop" "user" ;;
+        esac
     done
     resetprop_if_match ro.boot.mode recovery boot
     resetprop_if_match ro.bootmode recovery boot
@@ -303,7 +376,9 @@ is_boot_completed() { [ "$(resetprop sys.boot_completed 2>/dev/null)" = "1" ]; }
 
 boot_summary() {
     rm=$(detect_root_manager)
-    log_info "Manager: $rm | Boot: $(is_boot_completed && echo done || echo booting) | Allowlist: $ALLOWLIST_FILE | HideMgr: $(is_manager_hidden)"
+    if is_boot_completed; then boot="done"; else boot="booting"; fi
+    if is_manager_hidden; then hidemgr="true"; else hidemgr="false"; fi
+    log_info "Manager: $rm | Boot: $boot | Allowlist: $ALLOWLIST_FILE | HideMgr: $hidemgr"
 }
 
 # ---------------------------------------------------------------------------

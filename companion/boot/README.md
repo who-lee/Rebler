@@ -8,7 +8,7 @@ Rebler-Boot is a stand-alone Magisk/KernelSU/APatch module that lives alongside 
 
 1. Sets the same `ro.boot.flash.locked=1`, `ro.boot.verifiedbootstate=green`, `ro.boot.vbmeta.device_state=locked`, `ro.secureboot.lockstate=locked`, `sys.oem_unlock_allowed=0` chain that a stock locked-phone has.
 2. Strips the `ro.boot.verifiedbooterror*` markers some kernel builds set when a Magisk/KSU patch happens.
-3. Bind-mounts a clean `/proc/cmdline` over the upstream one — strips `androidboot.unlocked=1`, `androidboot.verifier=disabled`, and re-sets `androidboot.verifiedbootstate=green`. **If the kernel refuses the bind-mount, Rebler-Boot logs the failure rather than silently keep the dirty cmdline.**
+3. Bind-mounts a clean `/proc/cmdline` over the upstream one — strips `androidboot.unlocked=1`, `androidboot.verifier=disabled`, and re-sets `androidboot.verifiedbootstate=green`. **If the kernel refuses the bind-mount, the upstream cmdline stays visible and Rebler-Boot only logs the failure** (check `/data/local/tmp/ReblBoot.log`, or the action button status).
 
 ## What Rebler-Boot does NOT do (and where the line is)
 
@@ -29,9 +29,11 @@ I do not bundle a keybox. I will not bundle a keybox.
 
 ## Install
 
+Push the ZIP to the device, then install from your root manager's
+Local Install menu (Magisk / KernelSU / APatch), then reboot:
+
 ```
-adb shell sh /data/adb/modules/ReblBoot/uninstall.sh
-adb install ReblBoot-v1.0.zip   # via Magisk / KernelSU / APatch Manager
+adb push ReblBoot-v1.0.zip /sdcard/Download/
 adb reboot
 ```
 
@@ -42,8 +44,8 @@ Or just install it from your root manager's Local Install menu.
 | Claim | Where |
 | --- | --- |
 | Sets locked verified-boot chain | `system.prop` + `post-fs-data.sh` |
-| Strips `ro.boot.verifiedbooterror*` | `common_func.sh` `known_blu_leaks` |
-| Bind-mounts clean `/proc/cmdline` | `post-fs-data.sh` `make_clean_cmdline` |
+| Strips `ro.boot.verifiedbooterror*` | `common_func.sh` `known_boot_leaks` |
+| Bind-mounts clean `/proc/cmdline` | `common_func.sh` `make_clean_cmdline` (called by `post-fs-data.sh`) |
 | Refuses to fake vbmeta digest | `system.prop` (deliberately absent) |
 | Refuses to claim a keymaster passmark | `module.prop` (no `passmark=` line) |
 

@@ -6,7 +6,9 @@
 # module to /data/adb/modules/Rebler and run the real customize.sh with the
 # shell helpers a recovery provides.
 #
-# Invocation (TWRP API): update-binary <outfd> <zip> <system-mountpoint>
+# Invocation (recovery API): update-binary <version> <outfd> <zipfile>.
+# $1 is the API version, $2 the fd for ui_print, $3 the ZIP being flashed.
+# (Magisk/KSU/APatch never call this file; they use their own installer.)
 
 OUTFD="${2:-}"
 
@@ -17,8 +19,14 @@ if [ "$(id -u)" != "0" ]; then abort "Must run as root"; fi
 OUTFD=$(echo "$OUTFD" | sed 's/[^0-9]//g')
 [ -z "$OUTFD" ] && OUTFD=1
 
-ZIPFILE="$2"
+ZIPFILE="$3"
+[ -z "$ZIPFILE" ] && abort "no ZIP path (expected update-binary <ver> <outfd> <zip>)"
+# Module dir depends on the root solution: KernelSU uses ksu/modules,
+# APatch uses ap/modules, Magisk uses modules. Probe in that order.
 MODPATH=/data/adb/modules/Rebler
+for base in /data/adb/ksu/modules /data/adb/ap/modules /data/adb/modules; do
+    if [ -d "$base" ]; then MODPATH="$base/Rebler"; break; fi
+done
 
 ui_print "Extracting Rebler to $MODPATH"
 mkdir -p "$MODPATH" /tmp/rebler-$$ 2>/dev/null

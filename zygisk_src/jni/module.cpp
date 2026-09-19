@@ -1,15 +1,17 @@
-// Rebler - Zygisk native module v1.3
+// Rebler - Zygisk native module v1.3.1
 // I built this against the official Zygisk API v5 header (vendored as
 // zygisk.hpp, unmodified). Per process:
-//   - onLoad: resolve our module dir via api->getModuleDir() and read
-//     .flag_zygisk + allowlist.json. Each newly forked process re-reads
-//     the config here, so WebUI edits are picked up by the next process
-//     that starts (there is no process that can "live-swap" mid-specialize,
-//     so this is the honest granularity).
-//   - preAppSpecialize: unshare a private mount namespace for apps not on
-//     the allowlist, then detach the root-manager storage mounts and scrub
-//     root-solution env vars. All of this happens before the sandbox is
-//     enforced, while we still run as zygote.
+//   - onLoad: stash api/env only. getModuleDir() is NOT valid here — the
+//     header restricts it to pre*Specialize, and on some root solutions
+//     it returns -1 outside those hooks (config would silently never
+//     load, allowlist ignored).
+//   - preAppSpecialize: read .flag_zygisk + allowlist.json fresh via
+//     getModuleDir(), so WebUI edits are picked up by the next process
+//     that starts. Then unshare a private mount namespace for apps not
+//     on the allowlist, detach root-manager storage mounts and scrub
+//     root-solution env vars. All before the sandbox is enforced.
+//   - Child zygotes (webview_zygote etc.) are skipped: isolating them
+//     would pollute every child they spawn.
 //
 // What I deliberately do NOT do:
 //   - JNI hooks on ApplicationPackageManager.getInstalledPackages. That
@@ -44,6 +46,7 @@ static const char *const MOUNT_HIDE[] = {
     "/data/adb/ksu",
     "/data/adb/ap",
     "/data/adb/magisk",
+    "/data/adb/magisk.db",
     "/data/adb/lspd",
     "/data/adb/riru",
     "/sbin/.magisk",
@@ -83,13 +86,17 @@ static std::string read_file_at(int dirfd, const char *name) {
     int fd = openat(dirfd, name, O_RDONLY | O_CLOEXEC);
     if (fd < 0) return "";
     std::string s;
+    s.reserve(4096);
     char buf[4096];
     ssize_t n;
-    while ((n = read(fd, buf, sizeof(buf))) > 0) {
-        if (s.size() + (size_t)n > 65536) { n = 1; break; }
+    while ((n = TEMP_FAILURE_RETRY(read(fd, buf, sizeof(buf)))) > 0) {
+        // Bounded: a runaway file fails safe (empty) instead of
+        // truncating into a half-parsed config.
+        if (s.size() + (size_t)n > 65536) { close(fd); return ""; }
         s.append(buf, n);
     }
     close(fd);
+    if (n < 0) return "";
     const size_t first = s.find_first_not_of(" \t\r\n");
     if (first == std::string::npos) return "";
     return s.substr(first, s.find_last_not_of(" \t\r\n") - first + 1);
@@ -111,13 +118,14 @@ static void read_config_at(int dirfd) {
     std::string body = read_file_at(dirfd, "allowlist.json");
     if (body.empty()) { g_state.parse_ok = true; return; }
 
-    // Extract the "allow" array.
+    // Extract the "allow" array. Malformed layouts fail closed on the
+    // parse flag (the allowlist collected so far still applies).
     size_t a = body.find("\"allow\"");
-    if (a == std::string::npos) { g_state.parse_ok = true; return; }
+    if (a == std::string::npos) { g_state.parse_ok = false; return; }
     size_t lb = body.find('[', a);
-    if (lb == std::string::npos) { g_state.parse_ok = true; return; }
+    if (lb == std::string::npos) { g_state.parse_ok = false; return; }
     size_t rb = body.find(']', lb);
-    if (rb == std::string::npos) { g_state.parse_ok = true; return; }
+    if (rb == std::string::npos) { g_state.parse_ok = false; return; }
 
     std::string arr = body.substr(lb + 1, rb - lb - 1);
     size_t i = 0;
@@ -130,15 +138,21 @@ static void read_config_at(int dirfd) {
         i = q2 + 1;
     }
 
-    // deny_root_manager: look for the field, then decide false only on an
-    // explicit "false" token (whitespace-tolerant). Anything else (missing,
-    // "true") means managers are denied like any other app.
+    // deny_root_manager: strict token parse after the colon. Only an
+    // explicit `true` denies; missing field or explicit `false` keeps the
+    // safe default (managers auto-allowed). The old code searched the
+    // whole file tail for "false", so a package literally named *false*
+    // flipped the switch.
     bool deny_mgr = false;
     size_t d = body.find("\"deny_root_manager\"");
     if (d != std::string::npos) {
         size_t c = body.find(':', d);
-        std::string rest = body.substr(c == std::string::npos ? d : c + 1);
-        deny_mgr = rest.find("false") == std::string::npos;
+        if (c != std::string::npos) {
+            size_t t = body.find_first_not_of(" \t\r\n", c + 1);
+            if (t != std::string::npos) {
+                deny_mgr = body.compare(t, 4, "true") == 0;
+            }
+        }
     }
     if (!deny_mgr) {
         for (int k = 0; MANAGER_PKGS[k]; k++) {
@@ -167,10 +181,17 @@ static void isolate_app_namespace() {
         LOGW("unshare CLONE_NEWNS failed: %s", strerror(errno));
         return;
     }
-    mount("rootfs", "/", nullptr, MS_SLAVE | MS_REC, nullptr);
+    // MS_PRIVATE (not SLAVE): a slave namespace still receives mount
+    // events from the host, which re-exposes /data/adb if the root
+    // solution remounts. Check the return — a failed remount means the
+    // detach below would propagate globally.
+    if (mount("rootfs", "/", nullptr, MS_PRIVATE | MS_REC, nullptr) != 0) {
+        LOGW("mount MS_PRIVATE failed: %s", strerror(errno));
+        return;
+    }
     for (int i = 0; MOUNT_HIDE[i]; i++) {
-        if (umount2(MOUNT_HIDE[i], MNT_DETACH) == 0) {
-            LOGD("umounted %s", MOUNT_HIDE[i]);
+        if (umount2(MOUNT_HIDE[i], MNT_DETACH) != 0 && errno != ENOENT) {
+            LOGW("umount %s failed: %s", MOUNT_HIDE[i], strerror(errno));
         }
     }
 }
@@ -195,7 +216,21 @@ public:
     void onLoad(zygisk::Api *api, JNIEnv *env) override {
         this->api_ = api;
         this->env_ = env;
+        // Config is read in preAppSpecialize, where getModuleDir() is
+        // valid. Nothing to do here besides stashing the handles.
+    }
 
+    void preAppSpecialize(zygisk::AppSpecializeArgs *args) override {
+        // Skip child zygotes (webview_zygote, app_zygote): isolating them
+        // would pollute every child they spawn. The pointer is optional —
+        // null means a regular app process.
+        if (args && args->is_child_zygote && *args->is_child_zygote) {
+            api_->setOption(zygisk::Option::DLCLOSE_MODULE_LIBRARY);
+            return;
+        }
+
+        // Fresh config read per specialize: valid here per the API docs,
+        // and WebUI edits take effect on the next process start.
         int dirfd = api_->getModuleDir();
         if (dirfd >= 0) {
             read_config_at(dirfd);
@@ -203,25 +238,24 @@ public:
         } else {
             LOGW("getModuleDir failed, running with defaults");
         }
-        LOGI("loaded; allowlist=%zu zygisk=%d parse=%d",
-              g_state.allowlist.size(),
-              (int)g_state.use_zygisk, (int)g_state.parse_ok);
-    }
 
-    void preAppSpecialize(zygisk::AppSpecializeArgs *args) override {
         const char *pkg = nullptr;
-        if (args) {
+        jboolean release = JNI_FALSE;
+        if (args && args->nice_name) {
             pkg = env_->GetStringUTFChars(args->nice_name, nullptr);
+            if (env_->ExceptionCheck()) {
+                env_->ExceptionClear();
+                pkg = nullptr;
+            }
+            release = (pkg != nullptr) ? JNI_TRUE : JNI_FALSE;
         }
         bool allowed = package_allowed(pkg);
-        LOGD("specialize uid=%d pkg=%s allowed=%d",
-              args ? (int)args->uid : -1, pkg ? pkg : "(null)", (int)allowed);
 
         if (!allowed && pkg != nullptr && g_state.use_zygisk) {
             isolate_app_namespace();
             clean_app_env();
         }
-        if (pkg != nullptr) {
+        if (release) {
             env_->ReleaseStringUTFChars(args->nice_name, pkg);
         }
         // We never register hooks that need to survive, so unload the lib

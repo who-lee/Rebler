@@ -23,5 +23,11 @@ for s in "$MODPATH"/.state_* "$MODPATH"/.flag_*; do
     [ -f "$s" ] && rm -f "$s" 2>/dev/null
 done
 
+# Stale writer temps + our log. The module dir itself is deleted by the
+# manager; the log lives outside it and would otherwise linger forever.
+rm -f "$MODPATH"/allowlist.json.tmp.* 2>/dev/null
+rmdir "$MODPATH"/allowlist.json.lock 2>/dev/null
+
 log_msg "INFO" "Uninstall complete"
+rm -f "$LOG_FILE" 2>/dev/null
 exit 0

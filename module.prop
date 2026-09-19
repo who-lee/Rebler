@@ -1,7 +1,7 @@
 id=Rebler
 name=Rebler - Root Hider
-version=v1.3
-versionCode=130
+version=v1.3.1
+versionCode=131
 author=lee-muriithi-kingori
 description=I built Rebler because I wanted a clean module that hides root from apps that shouldn't see it. v1.3 renames the module from Rox2 to Rebler and keeps the props honest. See companion/boot for Rebler-Boot. No fake keys, no fake passmark.
 updateJson=https://raw.githubusercontent.com/who-lee/Rebler/main/update.json

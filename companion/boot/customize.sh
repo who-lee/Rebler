@@ -37,8 +37,9 @@ chmod 644 /data/local/tmp/ReblBoot.log 2>/dev/null
 
 ui_print ""
 ui_print "Rebler-Boot installed. Reboot for changes to apply."
-ui_print "If used alongside Rebler, install Rebler-Boot second so its"
-ui_print "post-fs-data runs after Rebler's and inherits the cleaned props."
+ui_print "Order with Rebler does not matter: both sides use"
+ui_print "resetprop_if_diff, so whichever post-fs-data runs second"
+ui_print "converges on the same values."
 ui_print ""
 ui_print "Community: https://t.me/lestramk"
 exit 0

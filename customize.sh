@@ -3,7 +3,7 @@
 # Runs inside the recovery / module-installer context.
 
 ui_print "============================================"
-ui_print "  Rebler - Root Hider v1.3"
+ui_print "  Rebler - Root Hider v1.3.1"
 ui_print "  by lee-muriithi-kingori"
 ui_print "============================================"
 ui_print ""
@@ -30,7 +30,7 @@ if [ "${KSU:-}" = "true" ]; then
 elif [ "${APATCH:-}" = "true" ]; then
     ui_print "  Detected: APatch"
 elif [ -n "${MAGISK_VER_CODE:-}" ]; then
-    ui_print "  Detected: Magisk ${MAGISK_VER}"
+    ui_print "  Detected: Magisk ${MAGISK_VER:-unknown}"
 else
     ui_print "  Detected: unknown root manager"
 fi
@@ -46,8 +46,8 @@ set_perm "$MODPATH/customize.sh"          0 0 0755
 set_perm "$MODPATH/uninstall.sh"          0 0 0755
 set_perm "$MODPATH/action.sh"             0 0 0755
 set_perm "$MODPATH/hide_root.sh"          0 0 0755
-set_perm "$MODPATH/allowlist_manager.sh"  0 0 0755
-set_perm "$MODPATH/build.sh"              0 0 0755
+set_perm "$MODPATH/allowlist_manager.sh" 0 0 0755
+[ -f "$MODPATH/build.sh" ] && set_perm "$MODPATH/build.sh" 0 0 0755
 set_perm "$MODPATH/common_func.sh"        0 0 0644
 set_perm "$MODPATH/system.prop"           0 0 0644
 set_perm "$MODPATH/module.prop"           0 0 0644
